@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.env
+
+# Logs
+*.log
+output.log
+
+# Temp
+*.tmp
+*.temp
+
+# IDE
+.vscode/
+.idea/
+
+# Selenium
+chromedriver*
+geckodriver*
+
+# Proxy extension (dynamic)
+proxy_extension/background.js

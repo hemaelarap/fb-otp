@@ -1,0 +1,4 @@
+# Oxylabs proxies (HTTPS - work with browsers)
+# Format: host:port:username:password
+unblock.oxylabs.io:60000:hema1_aYLDu:fHQIVd_CryB0
+unblock.oxylabs.io:60000:DSDSD3dfsd_Vu4g1:JRw13q8MO_Ku=jB
