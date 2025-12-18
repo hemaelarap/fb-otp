@@ -760,27 +760,56 @@ console.log("Proxy Auth Extension Active");'''
             # Enter phone and search
             input_field.clear()
             input_field.send_keys(phone)
-            time.sleep(2)  # Wait before pressing Enter (+1s increased)
+            time.sleep(2)  # Wait before pressing Enter
             input_field.send_keys(Keys.ENTER)
             log(f"Searching for {phone}...", "OK")
             
-            # Wait for search result
-            time.sleep(4)
+            # Wait for search result (Increased to 6s + check for 'Is this you' element)
+            time.sleep(6)
             
             # Log URL after search
             log(f"URL after search: {self.driver.current_url}", "INFO")
             
-            # Check if NOT FOUND
+            # Check for POSITIVE match first (Profile card / 'Is this you')
+            try:
+                # Look for 'send_sms' or 'reset_password' indicators in URL
+                if "recover" in self.driver.current_url or "reset" in self.driver.current_url:
+                    log("Positive match by URL!", "OK")
+                else:
+                    # Look for profile card or specific texts
+                    page_source = self.driver.page_source.lower()
+                    positive_kws = ["send code", "isi koda", "sms", "text message", "whatsapp", "email", "facebook user", "is this you", "identify"]
+                    if any(kw in page_source for kw in positive_kws):
+                         log("Positive match by keywords!", "OK")
+            except:
+                pass
+
+            # Check if GENUINELY not found
             page_source = self.driver.page_source.lower()
-            not_found_keywords = ["no search results", "no account found", "couldn't find", "no results", "لم نتمكن"]
-            if any(kw in page_source for kw in not_found_keywords):
-                log("Account NOT FOUND", "WARN")
-                result["status"] = "NOT_FOUND"
-                result["message"] = "Phone not linked to Facebook"
-                result["last_url"] = self.driver.current_url
-                print(f"{C.Y}   [NOT FOUND]{C.END}")
-                print(f"   Last URL: {result['last_url']}")
-                return result
+            
+            # Stricter not found keywords
+            not_found_keywords = [
+                "no search results",
+                "your search did not return any results",
+                "didn't match any account",
+                "لم نتمكن من العثور",
+                "لا توجد نتائج بحث"
+            ]
+            
+            # Only trigger NOT FOUND if we are DEFINITELY on an error page (not just loading)
+            current_url = self.driver.current_url.lower()
+            is_identify_page = "identify" in current_url or "login" in current_url
+            
+            if is_identify_page and any(kw in page_source for kw in not_found_keywords):
+                # Double check: verify 'initiate' is NOT in URL (which would mean we actually succeeded)
+                if "initiate" not in current_url:
+                    log("Account NOT FOUND", "WARN")
+                    result["status"] = "NOT_FOUND"
+                    result["message"] = "Phone not linked to Facebook"
+                    result["last_url"] = self.driver.current_url
+                    print(f"{C.Y}   [NOT FOUND]{C.END}")
+                    print(f"   Last URL: {result['last_url']}")
+                    return result
             
             log("Account FOUND! Moving to step 2...", "OK")
             
