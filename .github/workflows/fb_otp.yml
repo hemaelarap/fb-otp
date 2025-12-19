@@ -65,13 +65,13 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y cloudflare-warp
           
-          # Register and connect
-          warp-cli register || true
-          warp-cli connect || true
-          sleep 5
+          # Register and connect (accept ToS automatically)
+          warp-cli registration new --accept-tos || true
+          warp-cli connect --accept-tos || true
+          sleep 10
           
           # Verify connection
-          warp-cli status
+          warp-cli status || true
       
       - name: Verify WARP Connection
         run: |
