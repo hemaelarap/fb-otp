@@ -255,6 +255,20 @@ class FacebookOTPBrowser:
         # Realistic User Agent (Updated to Chrome 133)
         options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36")
         
+        # Add realistic browser preferences
+        prefs = {
+            "profile.default_content_setting_values.notifications": 2,
+            "profile.managed_default_content_settings.images": 1,
+            "credentials_enable_service": False,
+            "profile.password_manager_enabled": False,
+            "download.prompt_for_download": False,
+            "download.directory_upgrade": True,
+            "safebrowsing.enabled": True,
+            "intl.accept_languages": "en-US,en",
+            "plugins.always_open_pdf_externally": True
+        }
+        options.add_experimental_option("prefs", prefs)
+        
         # Disable automation flags (Only for regular Chrome, not undetected-chromedriver)
         if not UNDETECTED_AVAILABLE:
             options.add_experimental_option("excludeSwitches", ["enable-automation"])
@@ -474,15 +488,48 @@ console.log("Proxy Auth Extension Active");'''
         except Exception as e:
             log(f"Error sending Telegram photo: {e}", "WARN")
 
+    def simulate_human_behavior(self):
+        """Simulate human-like interactions with the page"""
+        try:
+            # Random small scroll
+            scroll_amount = random.randint(50, 200)
+            self.driver.execute_script(f"window.scrollBy(0, {scroll_amount});")
+            time.sleep(random.uniform(0.3, 0.8))
+            
+            # Sometimes scroll back up a bit
+            if random.choice([True, False]):
+                self.driver.execute_script(f"window.scrollBy(0, -{scroll_amount // 2});")
+                time.sleep(random.uniform(0.2, 0.5))
+            
+            # Move mouse randomly (inject mouse move event)
+            x = random.randint(100, 800)
+            y = random.randint(100, 600)
+            self.driver.execute_script(f"""
+                var event = new MouseEvent('mousemove', {{
+                    'view': window,
+                    'bubbles': true,
+                    'cancelable': true,
+                    'clientX': {x},
+                    'clientY': {y}
+                }});
+                document.dispatchEvent(event);
+            """)
+            time.sleep(random.uniform(0.1, 0.3))
+        except:
+            pass
+
     def step1_open_recovery_page(self):
         """Step 1: Open Facebook, handle cookies, and navigate to recovery"""
         log("Step 1: Opening Facebook Recovery Page...")
         try:
             self.driver.get('https://www.facebook.com/login/identify')
-            self.random_sleep(5, 8)  # Increased wait for cookie popup and page load (Slow down)
+            self.random_sleep(8, 12)  # Longer wait to appear more human
             
             # Handle Cookie Consent (European/International IPs)
             self._handle_cookie_consent()
+            
+            # Simulate human browsing behavior
+            self.simulate_human_behavior()
             
             return True
         except Exception as e:
@@ -908,10 +955,17 @@ console.log("Proxy Auth Extension Active");'''
                 result["last_url"] = self.driver.current_url
                 return result
             
-            # Enter phone and search
+            
+            # Enter phone with human-like typing
             input_field.clear()
-            input_field.send_keys(phone)
-            time.sleep(2)  # Wait before pressing Enter
+            time.sleep(random.uniform(0.3, 0.8))  # Think before typing
+            
+            # Type character by character with random delays
+            for char in phone:
+                input_field.send_keys(char)
+                time.sleep(random.uniform(0.08, 0.25))  # Human typing speed
+            
+            time.sleep(random.uniform(1.5, 3.0))  # Review before pressing Enter
             
             # DEBUG: Screenshot BEFORE search
             try:
@@ -922,8 +976,8 @@ console.log("Proxy Auth Extension Active");'''
             input_field.send_keys(Keys.ENTER)
             log(f"Searching for {phone}...", "OK")
             
-            # Wait for search result (Increased to 8s)
-            time.sleep(8)
+            # Wait for search result (Increased to 15s to avoid rate limit)
+            time.sleep(15)
             
             # DEBUG: Screenshot AFTER search
             try:
