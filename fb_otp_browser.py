@@ -375,20 +375,6 @@ console.log("Proxy Auth Extension Active");'''
             return False
     
     def step1_open_recovery_page(self):
-        """Step 1: Open Facebook account recovery page"""
-        log("Step 1: Opening recovery page...")
-        
-        try:
-            self.driver.get("https://www.facebook.com/login/identify/")
-            time.sleep(1)
-            
-            # Check if page loaded
-            if "identify" in self.driver.current_url.lower() or "facebook" in self.driver.current_url.lower():
-                log("Recovery page loaded!", "OK")
-                return True
-            else:
-                log("Unexpected page loaded", "WARN")
-                return True  # Continue anyway
                 
         except Exception as e:
             log(f"Error loading page: {e}", "ERROR")
@@ -1126,7 +1112,7 @@ def main():
 ║         Designed by: Doctor Kayf (@Doc_kayf)                ║
 ╚════════════════════════════════════════════════════════════╝{C.END}
 """)
-    
+    print("DEBUG: Inside main", flush=True)
     # Check for flags
     headless = "--headless" in sys.argv
     parallel = "--parallel" in sys.argv
