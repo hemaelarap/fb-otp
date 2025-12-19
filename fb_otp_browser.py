@@ -390,46 +390,65 @@ console.log("Proxy Auth Extension Active");'''
             return False
 
     def _handle_cookie_consent(self):
-        """Check for and dismiss cookie consent dialogs"""
+        """Click 'Decline optional cookies' to handle consent dialog properly"""
         try:
-            log("Checking for cookie consent...")
+            # Script to finding and CLICKing the decline button (persist decision)
+            js_click_decline = """
+            (function() {
+                // Priority 1: Exact aria-label match (Proven to work)
+                var selectors = [
+                    '[aria-label="Decline optional cookies"]',
+                    '[aria-label="Only allow essential cookies"]',
+                    '[aria-label="Decline"]',
+                    '[aria-label="Reject"]',
+                    '[aria-label="رفض ملفات تعريف الارتباط الاختيارية"]', // Arabic
+                    '[aria-label="Solo cookies esenciales"]', // Spanish
+                    '[aria-label="Refuser les cookies optionnels"]' // French
+                ];
+                
+                for (var i = 0; i < selectors.length; i++) {
+                    var btn = document.querySelector(selectors[i]);
+                    if (btn) {
+                        btn.click();
+                        console.log('Clicked cookie button: ' + selectors[i]);
+                        return 'clicked_' + selectors[i];
+                    }
+                }
+                
+                // Priority 2: Text search in buttons (Fallback)
+                var buttons = document.querySelectorAll('[role="button"], button');
+                for (var j = 0; j < buttons.length; j++) {
+                    var text = buttons[j].textContent.toLowerCase();
+                    if (text.includes('decline optional') || text.includes('only allow essential')) {
+                        buttons[j].click();
+                        console.log('Clicked button by text');
+                        return 'clicked_text_match';
+                    }
+                }
+                
+                return 'not_found';
+            })();
+            """
             
-            # Common text variations for the "Decline" or "Essential only" button
-            cookie_buttons = [
-                "Decline optional cookies",
-                "Only allow essential cookies",
-                "Decline",
-                "Reject",
-                "Refuser les cookies optionnels", # French
-                "Solo cookies esenciales" # Spanish
-            ]
-            
-            for text in cookie_buttons:
-                try:
-                    # Look for button/span with this text
-                    xpath = f"//span[contains(text(), '{text}')] | //div[@aria-label='{text}'] | //span[contains(text(), '{text}')]/.."
-                    element = self._wait_for_element(By.XPATH, xpath, timeout=2)
-                    
-                    if element:
-                        log(f"Found cookie button: {text}. Clicking...")
-                        try:
-                            element.click()
-                        except:
-                            self.driver.execute_script("arguments[0].click();", element)
-                        
-                        self.random_sleep(1, 2)
-                        return # Clicked one, assuming it clears the dialog
-                except:
-                    continue
-            
-            log("No cookie banner found or no blocking action required.")
+            # Try multiple times to catch late-loading dialogs
+            for attempt in range(3):
+                result = self.driver.execute_script(js_click_decline)
+                if result and result != 'not_found':
+                    log(f"Cookie consent handled: {result} (attempt {attempt+1})", "OK")
+                    time.sleep(2) # Wait for dialog to disappear
+                    return
+                time.sleep(1)  # Wait before retry
+                
+            # If clicking failed, run the nuke script as a last resort fallback
+            # (Only if the dialog is still blocking us)
             
         except Exception as e:
-            log(f"Cookie check error (non-fatal): {e}", "WARN")
+            log(f"Cookie handler error: {e}", "WARN")
     
     def step2_enter_phone(self, phone):
         """Step 2: Enter phone number in search field"""
         log(f"Step 2: Entering phone number: {phone}...")
+        self._handle_cookie_consent()  # Ensure cookies don't block input
         
         try:
             # Find the email/phone input field - try multiple times
@@ -476,6 +495,7 @@ console.log("Proxy Auth Extension Active");'''
     def step3_click_search(self):
         """Step 3: Click the search button"""
         log("Step 3: Clicking search button...")
+        self._handle_cookie_consent() 
         
         try:
             # Try different button selectors
@@ -520,6 +540,7 @@ console.log("Proxy Auth Extension Active");'''
     def step4_check_account_found(self):
         """Step 4: Check if account was found"""
         log("Step 4: Checking if account exists...")
+        self._handle_cookie_consent()
         
         # Wait for page to load properly
         time.sleep(2)
@@ -576,6 +597,7 @@ console.log("Proxy Auth Extension Active");'''
     def step5_select_sms_option(self):
         """Step 5: Select SMS recovery option (NOT email)"""
         log("Step 5: Looking for SMS option (avoiding email)...")
+        self._handle_cookie_consent()
         
         time.sleep(0.5)
         
