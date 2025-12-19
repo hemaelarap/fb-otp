@@ -189,6 +189,33 @@ class FacebookOTPBrowser:
         self.proxy = proxy
         self.proxy_manager = proxy_manager
         
+    
+    def _save_failure_snapshot(self, step_name):
+        """Analyze failure context: Save screenshot, Log URL & Titles"""
+        try:
+            timestamp = int(time.time())
+            # 1. Log Critical Info
+            url = self.driver.current_url
+            title = self.driver.title
+            log(f"FAILURE TRACE [{step_name}] | URL: {url} | Title: {title}", "ERROR")
+            
+            # 2. Check for common error texts "Account Suspended", "No Search Results"
+            page_text = self.driver.find_element(By.TAG_NAME, "body").text.lower()
+            if "suspended" in page_text:
+                log("!! DIAGNOSIS: Account appears suspended/disabled !!", "ERROR")
+            elif "no result" in page_text or "didn't match" in page_text:
+                log("!! DIAGNOSIS: Search returned no results !!", "WARN")
+            elif "try again" in page_text:
+                log("!! DIAGNOSIS: Facebook asking to try again (Rate Limit?) !!", "WARN")
+            
+            # 3. Save Screenshot (if on server, this might not be viewable easily, but good for local)
+            filename = f"fail_{step_name}_{timestamp}.png"
+            self.driver.save_screenshot(filename)
+            log(f"Screenshot saved to: {filename}", "INFO")
+            
+        except Exception as e:
+            log(f"Failed to save failure snapshot: {e}", "WARN")
+
     def _setup_driver(self):
         """Setup Chrome WebDriver with optional proxy support"""
         log("Setting up Chrome browser...")
@@ -387,6 +414,7 @@ console.log("Proxy Auth Extension Active");'''
             return True
         except Exception as e:
             log(f"Error opening page: {e}", "ERROR")
+            self._save_failure_snapshot("step1_open_page")
             return False
 
     def _handle_cookie_consent(self):
@@ -651,7 +679,8 @@ console.log("Proxy Auth Extension Active");'''
             return False
             
         except Exception as e:
-            log(f"Error selecting SMS: {e}", "ERROR")
+            log(f"Error searching number: {e}", "ERROR")
+            self._save_failure_snapshot("step2_search_error")
             return False
     
     def step6_send_code(self):
