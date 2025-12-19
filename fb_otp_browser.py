@@ -375,10 +375,57 @@ console.log("Proxy Auth Extension Active");'''
             return False
     
     def step1_open_recovery_page(self):
-                
+        """Step 1: Open Facebook, handle cookies, and navigate to recovery"""
+        log("Step 1: Opening Facebook Recovery Page...")
+        try:
+            self.driver.get('https://www.facebook.com/login/identify')
+            self.random_sleep(4, 5)  # Increased wait for cookie popup
+            
+            # Handle Cookie Consent (European/International IPs)
+            self._handle_cookie_consent()
+            
+            return True
         except Exception as e:
-            log(f"Error loading page: {e}", "ERROR")
+            log(f"Error opening page: {e}", "ERROR")
             return False
+
+    def _handle_cookie_consent(self):
+        """Check for and dismiss cookie consent dialogs"""
+        try:
+            log("Checking for cookie consent...")
+            
+            # Common text variations for the "Decline" or "Essential only" button
+            cookie_buttons = [
+                "Decline optional cookies",
+                "Only allow essential cookies",
+                "Decline",
+                "Reject",
+                "Refuser les cookies optionnels", # French
+                "Solo cookies esenciales" # Spanish
+            ]
+            
+            for text in cookie_buttons:
+                try:
+                    # Look for button/span with this text
+                    xpath = f"//span[contains(text(), '{text}')] | //div[@aria-label='{text}'] | //span[contains(text(), '{text}')]/.."
+                    element = self._wait_for_element(By.XPATH, xpath, timeout=2)
+                    
+                    if element:
+                        log(f"Found cookie button: {text}. Clicking...")
+                        try:
+                            element.click()
+                        except:
+                            self.driver.execute_script("arguments[0].click();", element)
+                        
+                        self.random_sleep(1, 2)
+                        return # Clicked one, assuming it clears the dialog
+                except:
+                    continue
+            
+            log("No cookie banner found or no blocking action required.")
+            
+        except Exception as e:
+            log(f"Cookie check error (non-fatal): {e}", "WARN")
     
     def step2_enter_phone(self, phone):
         """Step 2: Enter phone number in search field"""
