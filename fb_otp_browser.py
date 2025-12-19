@@ -773,8 +773,8 @@ console.log("Proxy Auth Extension Active");'''
                 ip_text = self.driver.find_element(By.TAG_NAME, "body").text.strip()
                 if ip_text:
                     log(f"Current IP: {ip_text}", "OK")
-            except:
-                pass
+            except Exception as e:
+                log(f"Could not check IP (Continuing flow): {e}", "WARN")
             
             # ========== STEP 1: Open identify page and search ==========
             log("Step 1: Opening identify page...", "INFO")
@@ -1020,55 +1020,36 @@ console.log("Proxy Auth Extension Active");'''
         except Exception as e:
             log(f"Error clicking search: {e}", "ERROR")
             self._save_failure_snapshot("step3_click_error")
-            return False(10):
-                    current_url = self.driver.current_url
-                    if "/recover/code" in current_url or "rm=send_sms" in current_url:
-                        log(f"Navigated to OTP page!", "OK")
-                        break
-                    time.sleep(1)
-                
-                # Get final URL
-                result["last_url"] = self.driver.current_url
-                log(f"Final URL: {result['last_url']}", "INFO")
-                
-                # Check success
-                if "/recover/code" in result["last_url"] or "rm=send_sms" in result["last_url"]:
-                    log("*** OTP SENT SUCCESSFULLY! ***", "SUCCESS")
-                    result["status"] = "OTP_SENT"
-                    result["message"] = "OTP sent successfully"
-                    print(f"{C.G}{C.BOLD}   [SUCCESS] OTP sent!{C.END}")
-                else:
-                    # Check for text confirmation in page source (AJAX update)
-                    page_source = self.driver.page_source.lower()
-                    success_keywords = ["enter code", "security code", "digit code", "we sent", "enter the code", "أدخل الرمز", "الرمز المكون", "رمز النزاع", "sent a code"]
-                    
-                    if any(kw in page_source for kw in success_keywords):
-                        result["status"] = "OTP_SENT"
-                        result["message"] = "OTP sent (detected via text)"
-                        print(f"{C.G}   [OTP SENT] Check phone (Text Confirmed){C.END}")
-                    else:
-                        log("Continue clicked but page didn't navigate to code page", "WARN")
-                        
-                        # Check if we were redirected back to identify (Failure loop)
-                        if "login/identify" in self.driver.current_url:
-                            result["status"] = "FAILED"
-                            result["message"] = "Redirected back to identify page (Possible block)"
-                            print(f"{C.R}   [FAILED] Redirected to identify page{C.END}")
-                        else:
-                            # Original fallback for unknown pages
-                            result["status"] = "OTP_SENT"
-                            result["message"] = "Continue clicked, unknown result state"
-                            print(f"{C.Y}   [LIKELY SENT] Check phone (Unknown State){C.END}")
-                
-                print(f"   Last URL: {result['last_url']}")
-                return result
+            result["last_url"] = self.driver.current_url
+            log(f"Final URL: {result['last_url']}", "INFO")
+            
+            # Check success
+            if "/recover/code" in result["last_url"] or "rm=send_sms" in result["last_url"]:
+                log("*** OTP SENT SUCCESSFULLY! ***", "SUCCESS")
+                result["status"] = "OTP_SENT"
+                result["message"] = "OTP sent successfully"
+                print(f"{C.G}{C.BOLD}   [SUCCESS] OTP sent!{C.END}")
             else:
-                log("Continue button not found!", "ERROR")
-                result["status"] = "FOUND_NO_OTP"
-                result["message"] = "Account found but Continue button not found"
-                result["last_url"] = self.driver.current_url
-                print(f"   Last URL: {result['last_url']}")
-                return result
+                # Check for text confirmation in page source (AJAX update)
+                page_source = self.driver.page_source.lower()
+                success_keywords = ["enter code", "security code", "digit code", "we sent", "enter the code", "أدخل الرمز", "الرمز المكون", "رمز النزاع", "sent a code"]
+                
+                if any(kw in page_source for kw in success_keywords):
+                    result["status"] = "OTP_SENT"
+                    result["message"] = "OTP sent (detected via text)"
+                    print(f"{C.G}   [OTP SENT] Check phone (Text Confirmed){C.END}")
+                else:
+                    log("Continue clicked but page didn't navigate to code page", "WARN")
+                    
+                    # Check if we were redirected back to identify (Failure loop)
+                    if "login/identify" in self.driver.current_url:
+                        result["status"] = "FAILED"
+                        result["message"] = "Redirected back to identify page (Possible block)"
+                        print(f"{C.R}   [FAILED] Redirected to identify page{C.END}")
+                    else:
+                        result["last_url"] = self.driver.current_url
+                        print(f"   Last URL: {result['last_url']}")
+                        return result
                 
         except Exception as e:
             log(f"Error: {e}", "ERROR")
