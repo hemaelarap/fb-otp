@@ -240,7 +240,19 @@ class FacebookOTPBrowser:
         
         # Anti-detection options
         options.add_argument("--disable-blink-features=AutomationControlled")
-        options.add_argument("--window-size=1920,1080")
+        
+        # Mobile Viewport & User Agent (Android)
+        mobile_ua = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Mobile Safari/537.36"
+        options.add_argument(f"user-agent={mobile_ua}")
+        options.add_argument("--window-size=375,812")
+        
+        # Enable Mobile Emulation
+        mobile_emulation = {
+            "deviceMetrics": { "width": 375, "height": 812, "pixelRatio": 3.0 },
+            "userAgent": mobile_ua
+        }
+        options.add_experimental_option("mobileEmulation", mobile_emulation)
+
         options.add_argument("--start-maximized")
         options.add_argument("--disable-infobars")
         options.add_argument("--disable-gpu")
@@ -252,9 +264,6 @@ class FacebookOTPBrowser:
         options.add_argument("--ignore-certificate-errors")
         options.add_argument("--ignore-ssl-errors")
         
-        # Realistic User Agent (Updated to Chrome 133)
-        options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36")
-        
         # Add realistic browser preferences
         prefs = {
             "profile.default_content_setting_values.notifications": 2,
@@ -265,7 +274,11 @@ class FacebookOTPBrowser:
             "download.directory_upgrade": True,
             "safebrowsing.enabled": True,
             "intl.accept_languages": "en-US,en",
-            "plugins.always_open_pdf_externally": True
+            "plugins.always_open_pdf_externally": True,
+            # WebRTC Anti-Leak (Critical for Azure/VPN users)
+            "webrtc.ip_handling_policy": "disable_non_proxied_udp",
+            "webrtc.multiple_routes_enabled": False,
+            "webrtc.nonproxied_udp_enabled": False
         }
         options.add_experimental_option("prefs", prefs)
         
@@ -416,9 +429,39 @@ console.log("Proxy Auth Extension Active");'''
             else:
                 self.driver = webdriver.Chrome(options=options)
             
-            # Execute script to hide webdriver (only if not using undetected_chromedriver)
-            if not UNDETECTED_AVAILABLE:
-                self.driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+            # --- ADVANCED FINGERPRINT SPOOFING (CDP) ---
+            # Execute CDP commands to override internal browser properties before page load
+            
+            try:
+                # 1. Spooof WebGL/GPU (Hide "Microsoft Basic Render Driver")
+                self.driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {
+                    "source": """
+                        // Spoof WebGL Vendor/Renderer
+                        const getParameter = WebGLRenderingContext.prototype.getParameter;
+                        WebGLRenderingContext.prototype.getParameter = function(parameter) {
+                            if (parameter === 37445) { return 'Google Inc. (NVIDIA)'; } // UNMASKED_VENDOR_WEBGL
+                            if (parameter === 37446) { return 'ANGLE (NVIDIA, NVIDIA GeForce GTX 1050 Ti Direct3D11 vs_5_0 ps_5_0, D3D11)'; } // UNMASKED_RENDERER_WEBGL
+                            return getParameter.apply(this, arguments);
+                        };
+                        
+                        // Spoof Generic Hardware Info
+                        Object.defineProperty(navigator, 'hardwareConcurrency', { get: () => 8 });
+                        Object.defineProperty(navigator, 'deviceMemory', { get: () => 8 });
+                        
+                        // Hide WebDriver flag (Redundant but safe)
+                        Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+                    """
+                })
+                log("Anti-fingerprint scripts injected (GPU/Hardware spoofed)", "OK")
+
+                # 2. Spoof Timezone (Optional - sticking to Client's likely Timezone or Proxy's)
+                # Since user uses WARP, might be variable. Let's aim for generic or EG if targeting EG numbers.
+                # Uncomment below to force Cairo time if needed, otherwise let system handling it.
+                # self.driver.execute_cdp_cmd("Emulation.setTimezoneOverride", {"timezoneId": "Africa/Cairo"})
+                
+            except Exception as e:
+                log(f"Warning: Failed to inject anti-fingerprint scripts: {e}", "WARN")
+
             
             if not UNDETECTED_AVAILABLE:
                 log("Chrome browser ready!", "OK")
@@ -520,9 +563,9 @@ console.log("Proxy Auth Extension Active");'''
 
     def step1_open_recovery_page(self):
         """Step 1: Open Facebook, handle cookies, and navigate to recovery"""
-        log("Step 1: Opening Facebook Recovery Page...")
+        log("Step 1: Opening Facebook Recovery Page (Mobile)...")
         try:
-            self.driver.get('https://www.facebook.com/login/identify')
+            self.driver.get('https://m.facebook.com/login/identify')
             self.random_sleep(8, 12)  # Longer wait to appear more human
             
             # Handle Cookie Consent (European/International IPs)
@@ -546,23 +589,35 @@ console.log("Proxy Auth Extension Active");'''
             
             button = None
             try:
-                # First try Arabic
-                button = wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, 'div[aria-label="رفض ملفات تعريف الارتباط الاختيارية"]')))
-                log("Found Arabic cookie button.", "INFO")
+                # First try Mobile Cookie Button (Decline)
+                button = wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, 'button[data-cookiebanner="accept_only_essential_button"]')))
+                log("Found Mobile cookie button (Decline).", "INFO")
             except:
+                pass
+
+            if not button:
+                try:
+                    # Then try Arabic
+                    button = wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, 'div[aria-label="رفض ملفات تعريف الارتباط الاختيارية"]')))
+                    log("Found Arabic cookie button.", "INFO")
+                except:
+                    pass
+            
+            if not button:
                 try:
                     # Then try English
                     button = wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, 'div[aria-label="Decline optional cookies"]')))
                     log("Found English cookie button.", "INFO")
                 except:
-                    log("No cookie popup found.", "INFO")
-                    return
+                    pass
 
             if button:
                 time.sleep(3)  # Wait before clicking to simulate human behavior
                 button.click()
                 log("Clicked 'Decline optional cookies' successfully.", "SUCCESS")
                 time.sleep(2)
+            else:
+                log("No cookie popup found.", "INFO")
             
         except Exception as e:
             log(f"Cookie handler error: {e}", "WARN")
@@ -578,6 +633,8 @@ console.log("Proxy Auth Extension Active");'''
                 (By.ID, "identify_email"),
                 (By.NAME, "email"),
                 (By.CSS_SELECTOR, "input[name='email']"),
+                (By.CSS_SELECTOR, "#contactpoint_step_input"),
+                (By.CSS_SELECTOR, "input.inputtext._9o1w"),
                 (By.CSS_SELECTOR, "input[type='text']"),
                 (By.XPATH, "//input[@placeholder]"),
                 (By.CSS_SELECTOR, "input"),
@@ -623,6 +680,9 @@ console.log("Proxy Auth Extension Active");'''
             # Try different button selectors
             button_selectors = [
                 (By.NAME, "did_submit"),
+                (By.CSS_SELECTOR, "button[name='did_submit']"),
+                (By.ID, "did_submit"),
+                (By.CSS_SELECTOR, "button._42ft._4jy0._9nq0"),
                 (By.CSS_SELECTOR, "button[type='submit']"),
                 (By.CSS_SELECTOR, "input[type='submit']"),
                 (By.XPATH, "//button[contains(text(), 'Search')]"),
@@ -915,8 +975,8 @@ console.log("Proxy Auth Extension Active");'''
             
             # ========== STEP 1: Open identify page and search ==========
             log("Step 1: Opening identify page...", "INFO")
-            # User requested fixed Arabic URL to avoid language switching issues
-            target_url = "https://ar-ar.facebook.com/login/identify/?ctx=recover&from_login_screen=0"
+            # User requested fixed Arabic URL to avoid language switching issues - Mobile
+            target_url = "https://m.facebook.com/login/identify/?ctx=recover&from_login_screen=0&locale=ar_AR"
             self.driver.get(target_url)
             time.sleep(3 if self.headless else 2)
             self._handle_cookie_consent()  # Ensure cookies are handled
@@ -1044,7 +1104,7 @@ console.log("Proxy Auth Extension Active");'''
             log("Step 2: Opening recover/initiate page...", "INFO")
             
             # Force navigation to the specific URL requested
-            recovery_url = "https://www.facebook.com/recover/initiate/?is_from_lara_screen=1"
+            recovery_url = "https://m.facebook.com/recover/initiate/?is_from_lara_screen=1"
             self.driver.get(recovery_url)
             log(f"Request sent to: {recovery_url}", "INFO")
             
