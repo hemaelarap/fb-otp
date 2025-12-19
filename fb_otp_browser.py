@@ -23,6 +23,8 @@ Usage:
 
 import sys
 import io
+import os
+import requests
 import time
 import re
 import random
@@ -428,6 +430,29 @@ console.log("Proxy Auth Extension Active");'''
         """Sleep for a random amount of time"""
         sleep_time = random.uniform(min_time, max_time)
         time.sleep(sleep_time)
+
+    def send_telegram_photo(self, caption, file_path):
+        """Send a photo to the configured Telegram chat."""
+        token = os.environ.get("TELEGRAM_TOKEN")
+        chat_id = os.environ.get("TELEGRAM_CHAT_ID")
+        
+        if not token or not chat_id:
+            log("Telegram credentials not found, skipping photo send.", "WARN")
+            return
+
+        try:
+            url = f"https://api.telegram.org/bot{token}/sendPhoto"
+            with open(file_path, "rb") as f:
+                files = {"photo": f}
+                data = {"chat_id": chat_id, "caption": caption}
+                response = requests.post(url, files=files, data=data)
+                
+            if response.status_code == 200:
+                log(f"Sent Telegram photo: {caption}", "OK")
+            else:
+                log(f"Failed to send Telegram photo: {response.text}", "WARN")
+        except Exception as e:
+            log(f"Error sending Telegram photo: {e}", "WARN")
 
     def step1_open_recovery_page(self):
         """Step 1: Open Facebook, handle cookies, and navigate to recovery"""
@@ -867,11 +892,24 @@ console.log("Proxy Auth Extension Active");'''
             input_field.clear()
             input_field.send_keys(phone)
             time.sleep(2)  # Wait before pressing Enter
+            
+            # DEBUG: Screenshot BEFORE search
+            try:
+                self.driver.save_screenshot("debug_before_search.png")
+                self.send_telegram_photo(f"Before Search ({phone})", "debug_before_search.png")
+            except: pass
+
             input_field.send_keys(Keys.ENTER)
             log(f"Searching for {phone}...", "OK")
             
             # Wait for search result (Increased to 8s)
             time.sleep(8)
+            
+            # DEBUG: Screenshot AFTER search
+            try:
+                self.driver.save_screenshot("debug_after_search.png")
+                self.send_telegram_photo(f"After Search ({phone})", "debug_after_search.png")
+            except: pass
             
             # Log URL after search
             log(f"URL after search: {self.driver.current_url}", "INFO")
