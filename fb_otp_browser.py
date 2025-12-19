@@ -390,57 +390,31 @@ console.log("Proxy Auth Extension Active");'''
             return False
 
     def _handle_cookie_consent(self):
-        """Click 'Decline optional cookies' to handle consent dialog properly"""
+        """Click 'Decline optional cookies' - Clean Version"""
+        log("Checking for cookie consent...", "INFO")
         try:
-            # Script to finding and CLICKing the decline button (persist decision)
-            js_click_decline = """
-            (function() {
-                // Priority 1: Exact aria-label match (Proven to work)
-                var selectors = [
-                    '[aria-label="Decline optional cookies"]',
-                    '[aria-label="Only allow essential cookies"]',
-                    '[aria-label="Decline"]',
-                    '[aria-label="Reject"]',
-                    '[aria-label="رفض ملفات تعريف الارتباط الاختيارية"]', // Arabic
-                    '[aria-label="Solo cookies esenciales"]', // Spanish
-                    '[aria-label="Refuser les cookies optionnels"]' // French
-                ];
-                
-                for (var i = 0; i < selectors.length; i++) {
-                    var btn = document.querySelector(selectors[i]);
-                    if (btn) {
-                        btn.click();
-                        console.log('Clicked cookie button: ' + selectors[i]);
-                        return 'clicked_' + selectors[i];
-                    }
-                }
-                
-                // Priority 2: Text search in buttons (Fallback)
-                var buttons = document.querySelectorAll('[role="button"], button');
-                for (var j = 0; j < buttons.length; j++) {
-                    var text = buttons[j].textContent.toLowerCase();
-                    if (text.includes('decline optional') || text.includes('only allow essential')) {
-                        buttons[j].click();
-                        console.log('Clicked button by text');
-                        return 'clicked_text_match';
-                    }
-                }
-                
-                return 'not_found';
-            })();
-            """
+            # Wait for the button to appear (timeout 5 seconds)
+            wait = WebDriverWait(self.driver, 5)
             
-            # Try multiple times to catch late-loading dialogs
-            for attempt in range(3):
-                result = self.driver.execute_script(js_click_decline)
-                if result and result != 'not_found':
-                    log(f"Cookie consent handled: {result} (attempt {attempt+1})", "OK")
-                    time.sleep(2) # Wait for dialog to disappear
+            button = None
+            try:
+                # First try Arabic
+                button = wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, 'div[aria-label="رفض ملفات تعريف الارتباط الاختيارية"]')))
+                log("Found Arabic cookie button.", "INFO")
+            except:
+                try:
+                    # Then try English
+                    button = wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, 'div[aria-label="Decline optional cookies"]')))
+                    log("Found English cookie button.", "INFO")
+                except:
+                    log("No cookie popup found.", "INFO")
                     return
-                time.sleep(1)  # Wait before retry
-                
-            # If clicking failed, run the nuke script as a last resort fallback
-            # (Only if the dialog is still blocking us)
+
+            if button:
+                time.sleep(3)  # Wait before clicking to simulate human behavior
+                button.click()
+                log("Clicked 'Decline optional cookies' successfully.", "SUCCESS")
+                time.sleep(2)
             
         except Exception as e:
             log(f"Cookie handler error: {e}", "WARN")
@@ -777,6 +751,7 @@ console.log("Proxy Auth Extension Active");'''
             log("Step 1: Opening identify page...", "INFO")
             self.driver.get("https://www.facebook.com/login/identify")
             time.sleep(3 if self.headless else 2)
+            self._handle_cookie_consent()  # Ensure cookies are handled
             
             # Log current URL
             log(f"Current URL: {self.driver.current_url}", "INFO")
