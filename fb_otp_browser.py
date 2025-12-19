@@ -890,6 +890,15 @@ console.log("Proxy Auth Extension Active");'''
                 # Double check: verify 'initiate' is NOT in URL (which would mean we actually succeeded)
                 if "initiate" not in current_url:
                     log("Account NOT FOUND", "WARN")
+                    # DEBUG: Save snapshot to understand why it wasn't found in headless
+                    self._save_failure_snapshot("NOT_FOUND_debug")
+                    try:
+                        with open("debug_not_found.html", "w", encoding="utf-8") as f:
+                            f.write(page_source)
+                        log("Saved debug_not_found.html", "INFO")
+                    except:
+                        pass
+                        
                     result["status"] = "NOT_FOUND"
                     result["message"] = "Phone not linked to Facebook"
                     result["last_url"] = self.driver.current_url
