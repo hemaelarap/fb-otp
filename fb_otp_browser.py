@@ -396,79 +396,85 @@ console.log("Proxy Auth Extension Active");'''
                     options.add_argument(f"--proxy-server=http://{proxy_host}:{proxy_port}")
                     log(f"Using proxy: {proxy_host}:{proxy_port}", "INFO")
         
+        # Driver Initialization Logic with Fallback
         try:
-            # Use undetected_chromedriver if available (better stealth)
+            # OPTION 1: Undetected Chrome (Best Stealth, but flaky with Mobile Emulation)
             if UNDETECTED_AVAILABLE:
-                log("Using undetected-chromedriver for enhanced stealth", "INFO")
-                self.driver = uc.Chrome(
-                    options=options,
-                    headless=self.headless,
-                    use_subprocess=False,
-                    version_main=None  # Auto-detect Chrome version
-                )
-                log("Undetected Chrome browser ready!", "OK")
-            elif ChromeDriverManager:
+                log("Attempting to use undetected-chromedriver...", "INFO")
                 try:
-                    driver_path = ChromeDriverManager().install()
-                    # FIX: webdriver-manager 4.0.1 sometimes returns THIRD_PARTY_NOTICES
-                    if "THIRD_PARTY_NOTICES" in driver_path:
-                        import os
-                        base_dir = os.path.dirname(driver_path)
-                        real_path = os.path.join(base_dir, "chromedriver")
-                        if os.path.exists(real_path):
-                            log(f"Correcting driver path from {driver_path} to {real_path}", "INFO")
-                            driver_path = real_path
-                            os.chmod(driver_path, 0o755) # Ensure executable
-                            
-                    service = Service(driver_path)
-                    self.driver = webdriver.Chrome(service=service, options=options)
+                    self.driver = uc.Chrome(
+                        options=options,
+                        headless=self.headless,
+                        use_subprocess=False,
+                        version_main=None
+                    )
+                    log("Undetected Chrome browser ready!", "OK")
                 except Exception as e:
-                    # Fallback for some systems
-                    log(f"DriverManager failed, trying default: {e}", "WARN")
+                    log(f"Undetected-Chromedriver failed: {e}", "WARN")
+                    log("Falling back to Standard Chrome...", "INFO")
+                    self.driver = None # Trigger fallback
+
+            # OPTION 2: Standard Chrome (Most Compatible)
+            if not self.driver:
+                if ChromeDriverManager:
+                    try:
+                        driver_path = ChromeDriverManager().install()
+                        if "THIRD_PARTY_NOTICES" in driver_path:
+                             import os
+                             base_dir = os.path.dirname(driver_path)
+                             real_path = os.path.join(base_dir, "chromedriver")
+                             if os.path.exists(real_path):
+                                 driver_path = real_path
+                                 os.chmod(driver_path, 0o755)
+                        
+                        service = Service(driver_path)
+                        self.driver = webdriver.Chrome(service=service, options=options)
+                        log("Standard Chrome (via DriverManager) ready!", "OK")
+                    except Exception as e:
+                         log(f"Standard Chrome (Manager) failed: {e}", "WARN")
+                
+                # OPTION 3: Direct Standard Chrome (System PATH)
+                if not self.driver:
                     self.driver = webdriver.Chrome(options=options)
-            else:
-                self.driver = webdriver.Chrome(options=options)
+                    log("Standard Chrome (direct) ready!", "OK")
             
             # --- ADVANCED FINGERPRINT SPOOFING (CDP) ---
             # Execute CDP commands to override internal browser properties before page load
-            
-            try:
-                # 1. Spooof WebGL/GPU (Hide "Microsoft Basic Render Driver")
-                self.driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {
-                    "source": """
-                        // Spoof WebGL Vendor/Renderer
-                        const getParameter = WebGLRenderingContext.prototype.getParameter;
-                        WebGLRenderingContext.prototype.getParameter = function(parameter) {
-                            if (parameter === 37445) { return 'Google Inc. (NVIDIA)'; } // UNMASKED_VENDOR_WEBGL
-                            if (parameter === 37446) { return 'ANGLE (NVIDIA, NVIDIA GeForce GTX 1050 Ti Direct3D11 vs_5_0 ps_5_0, D3D11)'; } // UNMASKED_RENDERER_WEBGL
-                            return getParameter.apply(this, arguments);
-                        };
-                        
-                        // Spoof Generic Hardware Info
-                        Object.defineProperty(navigator, 'hardwareConcurrency', { get: () => 8 });
-                        Object.defineProperty(navigator, 'deviceMemory', { get: () => 8 });
-                        
-                        // Hide WebDriver flag (Redundant but safe)
-                        Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
-                    """
-                })
-                log("Anti-fingerprint scripts injected (GPU/Hardware spoofed)", "OK")
+            if self.driver:
+                try:
+                    # 1. Spooof WebGL/GPU (Hide "Microsoft Basic Render Driver")
+                    self.driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {
+                        "source": """
+                            // Spoof WebGL Vendor/Renderer
+                            const getParameter = WebGLRenderingContext.prototype.getParameter;
+                            WebGLRenderingContext.prototype.getParameter = function(parameter) {
+                                if (parameter === 37445) { return 'Google Inc. (NVIDIA)'; } // UNMASKED_VENDOR_WEBGL
+                                if (parameter === 37446) { return 'ANGLE (NVIDIA, NVIDIA GeForce GTX 1050 Ti Direct3D11 vs_5_0 ps_5_0, D3D11)'; } // UNMASKED_RENDERER_WEBGL
+                                return getParameter.apply(this, arguments);
+                            };
+                            
+                            // Spoof Generic Hardware Info
+                            Object.defineProperty(navigator, 'hardwareConcurrency', { get: () => 8 });
+                            Object.defineProperty(navigator, 'deviceMemory', { get: () => 8 });
+                            
+                            // Hide WebDriver flag (Redundant but safe)
+                            Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+                        """
+                    })
+                    log("Anti-fingerprint scripts injected (GPU/Hardware spoofed)", "OK")
+                    
+                    # 2. Spoof Timezone (Optional - sticking to Client's likely Timezone or Proxy's)
+                    # Since user uses WARP, might be variable. Let's aim for generic or EG if targeting EG numbers.
+                    # Uncomment below to force Cairo time if needed, otherwise let system handling it.
+                    # self.driver.execute_cdp_cmd("Emulation.setTimezoneOverride", {"timezoneId": "Africa/Cairo"})
+                    
+                except Exception as e:
+                    log(f"Warning: Failed to inject anti-fingerprint scripts: {e}", "WARN")
 
-                # 2. Spoof Timezone (Optional - sticking to Client's likely Timezone or Proxy's)
-                # Since user uses WARP, might be variable. Let's aim for generic or EG if targeting EG numbers.
-                # Uncomment below to force Cairo time if needed, otherwise let system handling it.
-                # self.driver.execute_cdp_cmd("Emulation.setTimezoneOverride", {"timezoneId": "Africa/Cairo"})
-                
-            except Exception as e:
-                log(f"Warning: Failed to inject anti-fingerprint scripts: {e}", "WARN")
-
-            
-            if not UNDETECTED_AVAILABLE:
-                log("Chrome browser ready!", "OK")
-            return True
+            return True if self.driver else False
             
         except Exception as e:
-            log(f"Failed to setup Chrome: {e}", "ERROR")
+            log(f"CRITICAL: Failed to setup Chrome: {e}", "ERROR")
             return False
     
     def _close_driver(self):
