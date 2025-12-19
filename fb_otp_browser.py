@@ -189,7 +189,7 @@ class FacebookOTPBrowser:
     def __init__(self, headless=False, proxy=None, proxy_manager=None):
         self.driver = None
         self.headless = headless
-        self.wait_time = 10
+        self.wait_time = 15 # Increased default wait
         self.proxy = proxy
         self.proxy_manager = proxy_manager
         
@@ -361,8 +361,24 @@ console.log("Proxy Auth Extension Active");'''
         
         try:
             if ChromeDriverManager:
-                service = Service(ChromeDriverManager().install())
-                self.driver = webdriver.Chrome(service=service, options=options)
+                try:
+                    driver_path = ChromeDriverManager().install()
+                    # FIX: webdriver-manager 4.0.1 sometimes returns THIRD_PARTY_NOTICES
+                    if "THIRD_PARTY_NOTICES" in driver_path:
+                        import os
+                        base_dir = os.path.dirname(driver_path)
+                        real_path = os.path.join(base_dir, "chromedriver")
+                        if os.path.exists(real_path):
+                            log(f"Correcting driver path from {driver_path} to {real_path}", "INFO")
+                            driver_path = real_path
+                            os.chmod(driver_path, 0o755) # Ensure executable
+                            
+                    service = Service(driver_path)
+                    self.driver = webdriver.Chrome(service=service, options=options)
+                except Exception as e:
+                    # Fallback for some systems
+                    log(f"DriverManager failed, trying default: {e}", "WARN")
+                    self.driver = webdriver.Chrome(options=options)
             else:
                 self.driver = webdriver.Chrome(options=options)
             
@@ -418,7 +434,7 @@ console.log("Proxy Auth Extension Active");'''
         log("Step 1: Opening Facebook Recovery Page...")
         try:
             self.driver.get('https://www.facebook.com/login/identify')
-            self.random_sleep(4, 5)  # Increased wait for cookie popup
+            self.random_sleep(5, 8)  # Increased wait for cookie popup and page load (Slow down)
             
             # Handle Cookie Consent (European/International IPs)
             self._handle_cookie_consent()
@@ -854,8 +870,8 @@ console.log("Proxy Auth Extension Active");'''
             input_field.send_keys(Keys.ENTER)
             log(f"Searching for {phone}...", "OK")
             
-            # Wait for search result (Increased to 6s + check for 'Is this you' element)
-            time.sleep(6)
+            # Wait for search result (Increased to 8s)
+            time.sleep(8)
             
             # Log URL after search
             log(f"URL after search: {self.driver.current_url}", "INFO")
@@ -961,7 +977,7 @@ console.log("Proxy Auth Extension Active");'''
 
                 if continue_btn:
                     # Click Logic
-                    self.random_sleep(2, 4)
+                    self.random_sleep(5, 8)
                     try:
                         self.driver.execute_script("arguments[0].click();", continue_btn)
                         log(f"Continue clicked (JS) - Attempt {attempt+1}", "OK")
