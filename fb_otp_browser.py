@@ -934,18 +934,31 @@ console.log("Proxy Auth Extension Active");'''
             # Force navigation to the specific URL requested
             recovery_url = "https://www.facebook.com/recover/initiate/?is_from_lara_screen=1"
             self.driver.get(recovery_url)
-            log(f"Navigated to: {recovery_url}", "OK")
+            log(f"Request sent to: {recovery_url}", "INFO")
             
             # Wait for page load
             time.sleep(3 if self.headless else 2)
             
-            # Log current URL
-            log(f"Current URL: {self.driver.current_url}", "INFO")
+            # Verify we are not redirected back immediately
+            current_url = self.driver.current_url
+            log(f"Current URL: {current_url}", "INFO")
             
-            # Log current URL
-            log(f"Current URL: {self.driver.current_url}", "INFO")
-            
-            # Retry Loop for Redirect/Rate Limit
+            if "recover/initiate" not in current_url and "recover/code" not in current_url:
+                # We were redirected back
+                if "login/identify" in current_url or "login" in current_url:
+                     # Check for block
+                     page_source = self.driver.page_source
+                     if "You're Temporarily Blocked" in page_source or "going too fast" in page_source:
+                         log("!! BLOCK DETECTED (Step 2): You're Temporarily Blocked !!", "ERROR")
+                         self._save_failure_snapshot("blocked_step2")
+                         return {"phone": phone, "status": "BLOCKED", "message": "Rate limited at Step 2"}
+                     else:
+                         log("Silent redirect back to identify page in Step 2.", "WARN")
+                         self._save_failure_snapshot("step2_redirect_fail")
+                         # Ensure we fail here instead of proceeding to Step 3 blindly
+                         pass 
+
+            # Retry Loop for Redirect/Rate Limit (Step 3)
             max_retries = 3
             for attempt in range(max_retries):
                 log(f"Step 3: Clicking Continue (Attempt {attempt+1}/{max_retries})...", "INFO")
@@ -996,6 +1009,13 @@ console.log("Proxy Auth Extension Active");'''
                         return True
                     
                     elif "login/identify" in current_url:
+                        # Check for specific block message
+                        page_source = self.driver.page_source
+                        if "You're Temporarily Blocked" in page_source or "going too fast" in page_source:
+                             log("!! BLOCK DETECTED: You're Temporarily Blocked (Going too fast) !!", "ERROR")
+                             self._save_failure_snapshot("blocked_temporarily")
+                             return False
+
                         log(f"Redirected back to identify (Attempt {attempt+1}). Waiting...", "WARN")
                         time.sleep(5) # Wait before retry
                         # Don't return False yet, Try again!
