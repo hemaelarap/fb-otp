@@ -400,7 +400,12 @@ console.log("Proxy Auth Extension Active");'''
             return True
         except TimeoutException:
             return False
-    
+            
+    def random_sleep(self, min_time, max_time):
+        """Sleep for a random amount of time"""
+        sleep_time = random.uniform(min_time, max_time)
+        time.sleep(sleep_time)
+
     def step1_open_recovery_page(self):
         """Step 1: Open Facebook, handle cookies, and navigate to recovery"""
         log("Step 1: Opening Facebook Recovery Page...")
