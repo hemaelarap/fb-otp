@@ -1149,6 +1149,15 @@ console.log("Proxy Auth Extension Active");'''
             return result
             
         finally:
+            # DEBUG: Final screenshot before closing
+            try:
+                if self.driver:
+                    self.driver.save_screenshot("debug_final.png")
+                    self.send_telegram_photo(f"Final State ({phone})", "debug_final.png")
+                    log("Final screenshot sent to Telegram", "INFO")
+            except Exception as e:
+                log(f"Failed to send final screenshot: {e}", "WARN")
+            
             self._close_driver()
 
 
