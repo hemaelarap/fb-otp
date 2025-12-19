@@ -231,8 +231,6 @@ class FacebookOTPBrowser:
         options.add_argument("--start-maximized")
         options.add_argument("--disable-infobars")
         options.add_argument("--disable-gpu")
-        # User Requested: Enforce Standard Desktop Version (Chrome 120 / Win10)
-        options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
         
         options.add_argument("--no-sandbox")
         options.add_argument("--disable-dev-shm-usage")
@@ -241,10 +239,10 @@ class FacebookOTPBrowser:
         options.add_argument("--ignore-certificate-errors")
         options.add_argument("--ignore-ssl-errors")
         
-        # Realistic user agent
+        # Realistic User Agent (Unified to avoid conflicts) - Chrome 131 Windows 10
         options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
         
-        # Disable automation flags
+        # Disable automation flags (Crucial for Headless)
         options.add_experimental_option("excludeSwitches", ["enable-automation"])
         options.add_experimental_option('useAutomationExtension', False)
         
@@ -591,12 +589,29 @@ console.log("Proxy Auth Extension Active");'''
                 "no results",
                 "لم نتمكن من العثور",
                 "لا توجد نتائج",
+                "لم يتم العثور",
+                "try again",
+                "حاول مرة أخرى",
             ]
             
             for indicator in not_found_indicators:
                 if indicator in page_source:
-                    log("Account NOT FOUND", "WARN")
+                    log(f"Account NOT FOUND (Keyword: {indicator})", "WARN")
                     return "NOT_FOUND"
+                    
+            # FOURTH: Check for Profile Card (Visual element)
+            try:
+                if self.driver.find_elements(By.CSS_SELECTOR, '.uiHeaderTitle') or self.driver.find_elements(By.CSS_SELECTOR, 'form[action*="recover"]'):
+                     log("Account FOUND (Visual check)!", "OK")
+                     return "FOUND"
+            except:
+                pass
+
+            # Fallback
+            log("State unsure, assuming FOUND to proceed to next check", "INFO")
+            # Save debug screenshot for unsure state
+            self._save_failure_snapshot("step4_unsure_state")
+            return "FOUND"
             
             # If we're not sure, assume FOUND and try to continue
             log("Unknown result - assuming FOUND and continuing...", "WARN")
@@ -1087,11 +1102,19 @@ def format_phone(phone):
 
 def process_single_phone(phone, headless, stats, proxy_manager=None):
     """Process a single phone number (used for parallel processing)"""
-    phone = format_phone(phone)
-    browser = FacebookOTPBrowser(headless=headless, proxy_manager=proxy_manager)
-    result = browser.send_otp(phone)
-    stats.update(result["status"])
-    return result
+    try:
+        phone = format_phone(phone)
+        browser = FacebookOTPBrowser(headless=headless, proxy_manager=proxy_manager)
+        result = browser.send_otp(phone)
+        if result and "status" in result:
+            stats.update(result["status"])
+        else:
+            stats.update("ERROR")
+            result = {"phone": phone, "status": "ERROR", "message": "None result returned"}
+        return result
+    except Exception as e:
+        log(f"Process error for {phone}: {e}", "ERROR")
+        return {"phone": phone, "status": "ERROR", "message": str(e)}
 
 
 def process_batch(filename, headless=False, parallel=False, workers=3, proxy_file=None):
