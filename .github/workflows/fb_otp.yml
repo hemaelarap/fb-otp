@@ -56,6 +56,17 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Set up Cloudflare WARP
+        uses: fscarmen/warp-on-actions@v1.3
+        with:
+          stack: ipv4
+      
+      - name: Verify WARP Connection
+        run: |
+          WARP_IP=$(curl -s ifconfig.me)
+          MSG="✅ WARP Active! New IP: $WARP_IP"
+          curl -s -X POST "https://api.telegram.org/bot$TELEGRAM_TOKEN/sendMessage" -d "chat_id=$TELEGRAM_CHAT_ID" --data-urlencode "text=$MSG"
       
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -66,7 +77,7 @@ jobs:
         uses: browser-actions/setup-chrome@latest
       
       - name: Install dependencies
-        run: pip install selenium webdriver-manager requests
+        run: pip install selenium webdriver-manager requests selenium-wire undetected-chromedriver
       
       - name: Get IP
         id: ip
