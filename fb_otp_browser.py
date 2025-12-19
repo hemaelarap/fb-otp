@@ -255,9 +255,10 @@ class FacebookOTPBrowser:
         # Realistic User Agent (Updated to Chrome 133)
         options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36")
         
-        # Disable automation flags (Crucial for Headless)
-        options.add_experimental_option("excludeSwitches", ["enable-automation"])
-        options.add_experimental_option('useAutomationExtension', False)
+        # Disable automation flags (Only for regular Chrome, not undetected-chromedriver)
+        if not UNDETECTED_AVAILABLE:
+            options.add_experimental_option("excludeSwitches", ["enable-automation"])
+            options.add_experimental_option('useAutomationExtension', False)
         
         # Configure proxy if available
         proxy_string = self.proxy
