@@ -975,39 +975,52 @@ console.log("Proxy Auth Extension Active");'''
                     except:
                         # Attempt 3: JS Click
                         self.driver.execute_script("arguments[0].click();", continue_btn)
-                        log("Continue clicked (JS)!", "OK")
-                
-                # Wait for page navigation with retry
-                log("Waiting for page to navigate...", "INFO")
-                
-                # Monitor URL change loop
-                navigated = False
-                for _ in range(10): # Wait up to 10 seconds
-                    time.sleep(1)
-                    if self.driver.current_url != current_url_before:
-                        navigated = True
-                        break
-                    # If not navigated, try clicking again with JS as last resort
-                    if _ == 4: # After 4 seconds
-                         log("Navigation took too long, retrying JS click...", "WARN")
-                         try:
-                             self.driver.execute_script("arguments[0].click();", continue_btn)
-                             log("Retry click sent, waiting 2s...", "INFO")
-                             time.sleep(2)
-                         except:
-                             pass
+                       # Add "Thinking Time" to avoid bot detection
+            self.random_sleep(2, 4)
+            
+            # Click Continue using JS for reliability
+            try:
+                self.driver.execute_script("arguments[0].click();", continue_btn)
+                log("Continue clicked (JS)!", "OK")
+            except:
+                continue_btn.click()
+                log("Continue clicked (Standard)!", "OK")
 
-                if not navigated and self.headless:
-                    # In headless mode on GitHub Actions, sometimes we need to hit Enter on the button
-                    try:
-                        continue_btn.send_keys(Keys.ENTER)
-                        log("Sent ENTER key to button", "INFO")
-                        time.sleep(3)
-                    except:
-                        pass
+            # Wait for navigation
+            log("Waiting for page to navigate...", "INFO")
+            time.sleep(5)
+            
+            # Check Result
+            current_url = self.driver.current_url
+            
+            if "recover/code" in current_url:
+                log("Navigated to OTP page!", "OK")
+                return True
                 
-                # Wait up to 10 more seconds for /recover/code/
-                for i in range(10):
+            elif "login/identify" in current_url:
+                log("Redirected back to identify page (Possible block or Rate Limit)", "WARN")
+                # DUMP HTML to find the "Why"
+                page_source = self.driver.page_source
+                self._save_failure_snapshot("redirect_loop_blocked")
+                
+                # Check for specific error phrases
+                lower_page = page_source.lower()
+                if "try again" in lower_page:
+                    log("!! BLOCK REASON: Rate Limit (Try Again Later) !!", "ERROR")
+                elif "limit" in lower_page:
+                    log("!! BLOCK REASON: Speed Limit !!", "ERROR")
+                
+                return False
+                
+            else:
+                log(f"Unknown navigation: {current_url}", "WARN")
+                self._save_failure_snapshot("step3_unknown_nav")
+                return False
+                
+        except Exception as e:
+            log(f"Error clicking search: {e}", "ERROR")
+            self._save_failure_snapshot("step3_click_error")
+            return False(10):
                     current_url = self.driver.current_url
                     if "/recover/code" in current_url or "rm=send_sms" in current_url:
                         log(f"Navigated to OTP page!", "OK")
