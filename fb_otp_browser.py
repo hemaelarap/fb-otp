@@ -233,177 +233,82 @@ class FacebookOTPBrowser:
         """Setup Chrome WebDriver with optional proxy support"""
         log("Setting up Chrome browser...")
         
-        options = Options()
-        
-        if self.headless:
-            options.add_argument("--headless=new")
-        
-        # Anti-detection options
-        options.add_argument("--disable-blink-features=AutomationControlled")
-        
         # Mobile Viewport & User Agent (Android)
         mobile_ua = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Mobile Safari/537.36"
-        options.add_argument(f"user-agent={mobile_ua}")
-        options.add_argument("--window-size=375,812")
         
-        # Enable Mobile Emulation
-        mobile_emulation = {
-            "deviceMetrics": { "width": 375, "height": 812, "pixelRatio": 3.0 },
-            "userAgent": mobile_ua
-        }
-        options.add_experimental_option("mobileEmulation", mobile_emulation)
-
-        options.add_argument("--start-maximized")
-        options.add_argument("--disable-infobars")
-        options.add_argument("--disable-gpu")
-        
-        options.add_argument("--no-sandbox")
-        options.add_argument("--disable-dev-shm-usage")
-        options.add_argument("--disable-notifications")
-        options.add_argument("--lang=en-US")  # Force English language preference
-        options.add_argument("--ignore-certificate-errors")
-        options.add_argument("--ignore-ssl-errors")
-        
-        # Add realistic browser preferences
-        prefs = {
-            "profile.default_content_setting_values.notifications": 2,
-            "profile.managed_default_content_settings.images": 1,
-            "credentials_enable_service": False,
-            "profile.password_manager_enabled": False,
-            "download.prompt_for_download": False,
-            "download.directory_upgrade": True,
-            "safebrowsing.enabled": True,
-            "intl.accept_languages": "en-US,en",
-            "plugins.always_open_pdf_externally": True,
-            # WebRTC Anti-Leak (Critical for Azure/VPN users)
-            "webrtc.ip_handling_policy": "disable_non_proxied_udp",
-            "webrtc.multiple_routes_enabled": False,
-            "webrtc.nonproxied_udp_enabled": False
-        }
-        options.add_experimental_option("prefs", prefs)
-        
-        # Disable automation flags (Only for regular Chrome, not undetected-chromedriver)
-        if not UNDETECTED_AVAILABLE:
-            options.add_experimental_option("excludeSwitches", ["enable-automation"])
-            options.add_experimental_option('useAutomationExtension', False)
-        
-        # Configure proxy if available
-        proxy_string = self.proxy
-        if not proxy_string and self.proxy_manager:
-            proxy_string = self.proxy_manager.get_next()
-        
-        if proxy_string:
-            proxy_data = None
-            if self.proxy_manager:
-                proxy_data = self.proxy_manager.parse_proxy(proxy_string)
-            else:
-                parts = proxy_string.split(':')
-                if len(parts) >= 4:
-                    proxy_data = {
-                        'host': parts[0],
-                        'port': parts[1],
-                        'username': parts[2],
-                        'password': ':'.join(parts[3:])
-                    }
-                elif len(parts) == 2:
-                    proxy_data = {
-                        'host': parts[0],
-                        'port': parts[1],
-                        'username': None,
-                        'password': None
-                    }
+        def get_configured_options(use_mobile_emulation=True):
+            """Helper to generate fresh options"""
+            options = Options()
             
-            if proxy_data:
-                proxy_host = proxy_data['host']
-                proxy_port = proxy_data['port']
-                proxy_user = proxy_data.get('username')
-                proxy_pass = proxy_data.get('password')
+            if self.headless:
+                options.add_argument("--headless=new")
+            
+            # Anti-detection options
+            options.add_argument("--disable-blink-features=AutomationControlled")
+            
+            # UA & Window Size (Always Apply)
+            options.add_argument(f"user-agent={mobile_ua}")
+            options.add_argument("--window-size=375,812")
+            
+            if use_mobile_emulation:
+                # Enable Mobile Emulation (Can cause crash on some drivers)
+                mobile_emulation = {
+                    "deviceMetrics": { "width": 375, "height": 812, "pixelRatio": 3.0 },
+                    "userAgent": mobile_ua
+                }
+                options.add_experimental_option("mobileEmulation", mobile_emulation)
+
+            options.add_argument("--start-maximized")
+            options.add_argument("--disable-infobars")
+            options.add_argument("--disable-gpu")
+            
+            options.add_argument("--no-sandbox")
+            options.add_argument("--disable-dev-shm-usage")
+            options.add_argument("--disable-notifications")
+            options.add_argument("--lang=en-US")
+            options.add_argument("--ignore-certificate-errors")
+            options.add_argument("--ignore-ssl-errors")
+            
+            # Add realistic browser preferences
+            prefs = {
+                "profile.default_content_setting_values.notifications": 2,
+                "profile.managed_default_content_settings.images": 1,
+                "credentials_enable_service": False,
+                "profile.password_manager_enabled": False,
+                "download.prompt_for_download": False,
+                "download.directory_upgrade": True,
+                "safebrowsing.enabled": True,
+                "intl.accept_languages": "en-US,en",
+                "plugins.always_open_pdf_externally": True,
+                "webrtc.ip_handling_policy": "disable_non_proxied_udp",
+                "webrtc.multiple_routes_enabled": False,
+                "webrtc.nonproxied_udp_enabled": False
+            }
+            options.add_experimental_option("prefs", prefs)
+            
+            if not UNDETECTED_AVAILABLE:
+                options.add_experimental_option("excludeSwitches", ["enable-automation"])
+                options.add_experimental_option('useAutomationExtension', False)
+            
+            # Proxy Setup
+            proxy_string = self.proxy
+            if not proxy_string and self.proxy_manager:
+                proxy_string = self.proxy_manager.get_next()
+            
+            if proxy_string:
+                self._configure_proxy(options, proxy_string)
                 
-                if proxy_user and proxy_pass:
-                    # Use folder-based extension with --load-extension
-                    import os
-                    
-                    # Get the extension folder path (relative to script)
-                    script_dir = os.path.dirname(os.path.abspath(__file__))
-                    extension_dir = os.path.join(script_dir, 'proxy_extension')
-                    
-                    # Create extension directory if not exists
-                    os.makedirs(extension_dir, exist_ok=True)
-                    
-                    # Write manifest.json
-                    manifest_json = '''{
-    "version": "1.0.0",
-    "manifest_version": 2,
-    "name": "Proxy Auth Extension",
-    "permissions": [
-        "proxy",
-        "tabs",
-        "unlimitedStorage",
-        "storage",
-        "<all_urls>",
-        "webRequest",
-        "webRequestBlocking"
-    ],
-    "background": {
-        "scripts": ["background.js"],
-        "persistent": true
-    },
-    "minimum_chrome_version": "22.0.0"
-}'''
-                    with open(os.path.join(extension_dir, 'manifest.json'), 'w') as f:
-                        f.write(manifest_json)
-                    
-                    # Write background.js with proxy credentials
-                    # Use https scheme for Oxylabs proxies
-                    proxy_scheme = "https" if "oxylabs" in proxy_host.lower() else "http"
-                    background_js = f'''var config = {{
-    mode: "fixed_servers",
-    rules: {{
-        singleProxy: {{
-            scheme: "{proxy_scheme}",
-            host: "{proxy_host}",
-            port: {proxy_port}
-        }},
-        bypassList: ["localhost"]
-    }}
-}};
-chrome.proxy.settings.set({{value: config, scope: "regular"}}, function() {{
-    console.log("Proxy configured: {proxy_host}:{proxy_port}");
-}});
-function callbackFn(details) {{
-    return {{
-        authCredentials: {{
-            username: "{proxy_user}",
-            password: "{proxy_pass}"
-        }}
-    }};
-}}
-chrome.webRequest.onAuthRequired.addListener(
-    callbackFn,
-    {{urls: ["<all_urls>"]}},
-    ['blocking']
-);
-console.log("Proxy Auth Extension Active");'''
-                    
-                    with open(os.path.join(extension_dir, 'background.js'), 'w') as f:
-                        f.write(background_js)
-                    
-                    # Load extension using --load-extension flag
-                    options.add_argument(f"--load-extension={extension_dir}")
-                    log(f"Proxy extension loaded: {proxy_host}:{proxy_port}", "OK")
-                else:
-                    # Simple proxy without auth
-                    options.add_argument(f"--proxy-server=http://{proxy_host}:{proxy_port}")
-                    log(f"Using proxy: {proxy_host}:{proxy_port}", "INFO")
-        
-        # Driver Initialization Logic with Fallback
+            return options
+
+        # Driver Initialization Logic
         try:
-            # OPTION 1: Undetected Chrome (Best Stealth, but flaky with Mobile Emulation)
+            # OPTION 1: Undetected Chrome (Best Stealth)
             if UNDETECTED_AVAILABLE:
                 log("Attempting to use undetected-chromedriver...", "INFO")
                 try:
+                    # Try with FULL mobile emulation first
                     self.driver = uc.Chrome(
-                        options=options,
+                        options=get_configured_options(use_mobile_emulation=True),
                         headless=self.headless,
                         use_subprocess=False,
                         version_main=None
@@ -411,11 +316,14 @@ console.log("Proxy Auth Extension Active");'''
                     log("Undetected Chrome browser ready!", "OK")
                 except Exception as e:
                     log(f"Undetected-Chromedriver failed: {e}", "WARN")
-                    log("Falling back to Standard Chrome...", "INFO")
                     self.driver = None # Trigger fallback
 
-            # OPTION 2: Standard Chrome (Most Compatible)
+            # OPTION 2: Standard Chrome (Fallback)
             if not self.driver:
+                log("Falling back to Standard Chrome (Safe Mode)...", "INFO")
+                # Generate SAFE options (No mobileEmulation experimental option)
+                safe_options = get_configured_options(use_mobile_emulation=False)
+                
                 if ChromeDriverManager:
                     try:
                         driver_path = ChromeDriverManager().install()
@@ -428,46 +336,37 @@ console.log("Proxy Auth Extension Active");'''
                                  os.chmod(driver_path, 0o755)
                         
                         service = Service(driver_path)
-                        self.driver = webdriver.Chrome(service=service, options=options)
+                        self.driver = webdriver.Chrome(service=service, options=safe_options)
                         log("Standard Chrome (via DriverManager) ready!", "OK")
                     except Exception as e:
                          log(f"Standard Chrome (Manager) failed: {e}", "WARN")
                 
-                # OPTION 3: Direct Standard Chrome (System PATH)
+                # OPTION 3: Direct Standard Chrome
                 if not self.driver:
-                    self.driver = webdriver.Chrome(options=options)
-                    log("Standard Chrome (direct) ready!", "OK")
-            
+                    try:
+                        self.driver = webdriver.Chrome(options=safe_options)
+                        log("Standard Chrome (direct) ready!", "OK")
+                    except Exception as e:
+                        log(f"Standard Chrome (Direct) failed: {e}", "ERROR")
+
             # --- ADVANCED FINGERPRINT SPOOFING (CDP) ---
-            # Execute CDP commands to override internal browser properties before page load
             if self.driver:
                 try:
-                    # 1. Spooof WebGL/GPU (Hide "Microsoft Basic Render Driver")
+                    # 1. Spooof WebGL/GPU
                     self.driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {
                         "source": """
-                            // Spoof WebGL Vendor/Renderer
                             const getParameter = WebGLRenderingContext.prototype.getParameter;
                             WebGLRenderingContext.prototype.getParameter = function(parameter) {
-                                if (parameter === 37445) { return 'Google Inc. (NVIDIA)'; } // UNMASKED_VENDOR_WEBGL
-                                if (parameter === 37446) { return 'ANGLE (NVIDIA, NVIDIA GeForce GTX 1050 Ti Direct3D11 vs_5_0 ps_5_0, D3D11)'; } // UNMASKED_RENDERER_WEBGL
+                                if (parameter === 37445) { return 'Google Inc. (NVIDIA)'; }
+                                if (parameter === 37446) { return 'ANGLE (NVIDIA, NVIDIA GeForce GTX 1050 Ti Direct3D11 vs_5_0 ps_5_0, D3D11)'; }
                                 return getParameter.apply(this, arguments);
                             };
-                            
-                            // Spoof Generic Hardware Info
                             Object.defineProperty(navigator, 'hardwareConcurrency', { get: () => 8 });
                             Object.defineProperty(navigator, 'deviceMemory', { get: () => 8 });
-                            
-                            // Hide WebDriver flag (Redundant but safe)
                             Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
                         """
                     })
-                    log("Anti-fingerprint scripts injected (GPU/Hardware spoofed)", "OK")
-                    
-                    # 2. Spoof Timezone (Optional - sticking to Client's likely Timezone or Proxy's)
-                    # Since user uses WARP, might be variable. Let's aim for generic or EG if targeting EG numbers.
-                    # Uncomment below to force Cairo time if needed, otherwise let system handling it.
-                    # self.driver.execute_cdp_cmd("Emulation.setTimezoneOverride", {"timezoneId": "Africa/Cairo"})
-                    
+                    log("Anti-fingerprint scripts injected.", "OK")
                 except Exception as e:
                     log(f"Warning: Failed to inject anti-fingerprint scripts: {e}", "WARN")
 
@@ -476,6 +375,61 @@ console.log("Proxy Auth Extension Active");'''
         except Exception as e:
             log(f"CRITICAL: Failed to setup Chrome: {e}", "ERROR")
             return False
+
+    def _configure_proxy(self, options, proxy_string):
+        """Helper to configure proxy on options object"""
+        proxy_data = None
+        if self.proxy_manager:
+            proxy_data = self.proxy_manager.parse_proxy(proxy_string)
+        else:
+            parts = proxy_string.split(':')
+            if len(parts) >= 4:
+                proxy_data = {'host': parts[0], 'port': parts[1], 'username': parts[2], 'password': ':'.join(parts[3:])}
+            elif len(parts) == 2:
+                proxy_data = {'host': parts[0], 'port': parts[1], 'username': None, 'password': None}
+        
+        if proxy_data:
+            proxy_host = proxy_data['host']
+            proxy_port = proxy_data['port']
+            proxy_user = proxy_data.get('username')
+            proxy_pass = proxy_data.get('password')
+            
+            if proxy_user and proxy_pass:
+                # Use folder-based extension
+                import os
+                script_dir = os.path.dirname(os.path.abspath(__file__))
+                extension_dir = os.path.join(script_dir, 'proxy_extension')
+                os.makedirs(extension_dir, exist_ok=True)
+                
+                # Check if file exists to avoid writing every time
+                if not os.path.exists(os.path.join(extension_dir, 'manifest.json')):
+                    with open(os.path.join(extension_dir, 'manifest.json'), 'w') as f:
+                        f.write('''{
+        "version": "1.0.0",
+        "manifest_version": 2,
+        "name": "Proxy Auth Extension",
+        "permissions": ["proxy", "tabs", "unlimitedStorage", "storage", "<all_urls>", "webRequest", "webRequestBlocking"],
+        "background": {"scripts": ["background.js"], "persistent": true},
+        "minimum_chrome_version": "22.0.0"
+    }''')
+                
+                proxy_scheme = "https" if "oxylabs" in proxy_host.lower() else "http"
+                background_js = f'''var config = {{
+    mode: "fixed_servers",
+    rules: {{ singleProxy: {{ scheme: "{proxy_scheme}", host: "{proxy_host}", port: {proxy_port} }}, bypassList: ["localhost"] }}
+}};
+chrome.proxy.settings.set({{value: config, scope: "regular"}}, function() {{}});
+function callbackFn(details) {{ return {{ authCredentials: {{ username: "{proxy_user}", password: "{proxy_pass}" }} }}; }}
+chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}}, ['blocking']);'''
+                
+                with open(os.path.join(extension_dir, 'background.js'), 'w') as f:
+                    f.write(background_js)
+                
+                options.add_argument(f"--load-extension={extension_dir}")
+                log(f"Proxy extension loaded: {proxy_host}:{proxy_port}", "OK")
+            else:
+                options.add_argument(f"--proxy-server=http://{proxy_host}:{proxy_port}")
+                log(f"Using proxy: {proxy_host}:{proxy_port}", "INFO")
     
     def _close_driver(self):
         """Close the browser"""
