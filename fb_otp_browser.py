@@ -53,7 +53,11 @@ try:
     SELENIUMWIRE_AVAILABLE = True
 except ImportError:
     SELENIUMWIRE_AVAILABLE = False
-    print("[WARNING] selenium-wire not installed. Proxy auth may not work. Run: pip install selenium-wire")
+    SELENIUMWIRE_AVAILABLE = True
+except ImportError:
+    SELENIUMWIRE_AVAILABLE = False
+    # Only warn if proxy is actually used later, or just suppress noisy warning
+    pass
 
 try:
     from webdriver_manager.chrome import ChromeDriverManager
@@ -239,8 +243,8 @@ class FacebookOTPBrowser:
         options.add_argument("--ignore-certificate-errors")
         options.add_argument("--ignore-ssl-errors")
         
-        # Realistic User Agent (Unified to avoid conflicts) - Chrome 131 Windows 10
-        options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
+        # Realistic User Agent (Updated to Chrome 133)
+        options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36")
         
         # Disable automation flags (Crucial for Headless)
         options.add_experimental_option("excludeSwitches", ["enable-automation"])
@@ -925,128 +929,81 @@ console.log("Proxy Auth Extension Active");'''
             # Log current URL
             log(f"Current URL: {self.driver.current_url}", "INFO")
             
-            # ========== STEP 3: Click Continue button ==========
-            log("Step 3: Looking for Continue button...", "INFO")
-            
-            # Wait for page to fully load
-            time.sleep(2)
-            
-            continue_btn = None
-            
-            # Try the specific Continue button first
-            try:
-                continue_btn = WebDriverWait(self.driver, 5).until(
-                    EC.element_to_be_clickable((By.CSS_SELECTOR, "button[name='reset_action'][value='1']"))
-                )
-                log("Found Continue button (reset_action)", "OK")
-            except:
-                pass
-            
-            # Try by class
-            if not continue_btn:
+            # Retry Loop for Redirect/Rate Limit
+            max_retries = 3
+            for attempt in range(max_retries):
+                log(f"Step 3: Clicking Continue (Attempt {attempt+1}/{max_retries})...", "INFO")
+                
+                # ... (Find Button Logic - simplified re-search) ...
+                continue_btn = None
                 try:
-                    continue_btn = WebDriverWait(self.driver, 3).until(
-                        EC.element_to_be_clickable((By.CSS_SELECTOR, "button._42ft._4jy0._9nq0"))
+                    # Specific button
+                    continue_btn = WebDriverWait(self.driver, 5).until(
+                        EC.element_to_be_clickable((By.CSS_SELECTOR, "button[name='reset_action'][value='1']"))
                     )
-                    log("Found Continue button (class)", "OK")
                 except:
                     pass
-            
-            # Try any submit button
-            if not continue_btn:
-                try:
-                    btns = self.driver.find_elements(By.CSS_SELECTOR, "button[type='submit']")
-                    for btn in btns:
-                        if btn.is_displayed():
-                            continue_btn = btn
-                            log("Found submit button", "OK")
-                            break
-                except:
-                    pass
+                
+                if not continue_btn:
+                     try:
+                        continue_btn = WebDriverWait(self.driver, 3).until(
+                            EC.element_to_be_clickable((By.CSS_SELECTOR, "button._42ft._4jy0._9nq0"))
+                        )
+                     except:
+                        pass
+                
+                if not continue_btn:
+                     # Fallback to any submit
+                     try:
+                        continue_btn = self.driver.find_element(By.CSS_SELECTOR, "button[type='submit']")
+                     except:
+                        pass
 
-            # Try text-based search (Robust fallback)
-            if not continue_btn:
-                try:
-                    keywords = ["continue", "mencoba", "next", "send", "sms", "متابعة", "رقم", "إرسال", "استمرار", "تالي"]
-                    for kw in keywords:
-                        try:
-                            # XPath to find button/a/div with text containing keyword (case-insensitive)
-                            xpath = f"//*[contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), '{kw}')]"
-                            elements = self.driver.find_elements(By.XPATH, xpath)
-                            for elem in elements:
-                                if elem.is_displayed() and elem.is_enabled():
-                                    tag = elem.tag_name.lower()
-                                    # Filter for likely clickable elements
-                                    if tag in ['button', 'a'] or elem.get_attribute('role') == 'button':
-                                        continue_btn = elem
-                                        log(f"Found button by text: '{kw}' ({tag})", "OK")
-                                        break
-                            if continue_btn:
-                                break
-                        except:
-                            continue
-                except:
-                    pass
-            
-            if continue_btn:
-                # Scroll into view first
-                self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", continue_btn)
-                time.sleep(1)
-                
-                # Check current URL before clicking
-                current_url_before = self.driver.current_url
-                
-                # Attempt 1: ActionChains (Mouse Move + Click)
-                try:
-                    from selenium.webdriver.common.action_chains import ActionChains
-                    actions = ActionChains(self.driver)
-                    actions.move_to_element(continue_btn).pause(0.5).click().perform()
-                    log("Continue clicked (ActionChains)!", "OK")
-                except Exception as e:
-                    log(f"ActionChains click failed: {str(e)}", "WARN")
-                    # Attempt 2: Standard Click
+                if continue_btn:
+                    # Click Logic
+                    self.random_sleep(2, 4)
                     try:
-                        continue_btn.click()
-                        log("Continue clicked (Standard)!", "OK")
-                    except:
-                        # Attempt 3: JS Click
                         self.driver.execute_script("arguments[0].click();", continue_btn)
-                       # Add "Thinking Time" to avoid bot detection
-            self.random_sleep(2, 4)
+                        log(f"Continue clicked (JS) - Attempt {attempt+1}", "OK")
+                    except:
+                        continue_btn.click()
+                        log(f"Continue clicked (Std) - Attempt {attempt+1}", "OK")
+                    
+                    # Wait for navigation
+                    log("Waiting for navigation...", "INFO")
+                    time.sleep(5)
+                    
+                    current_url = self.driver.current_url
+                    
+                    if "recover/code" in current_url:
+                        log("Navigated to OTP page!", "OK")
+                        return True
+                    
+                    elif "login/identify" in current_url:
+                        log(f"Redirected back to identify (Attempt {attempt+1}). Waiting...", "WARN")
+                        time.sleep(5) # Wait before retry
+                        # Don't return False yet, Try again!
+                        if attempt == max_retries - 1:
+                             log("!! BLOCK REASON: Rate Limit (Persistent) !!", "ERROR")
+                             # DUMP HTML to find the "Why"
+                             page_source = self.driver.page_source
+                             self._save_failure_snapshot("redirect_loop_blocked_final")
+                             return False
+                        else:
+                             # Refresh before retry? No, might lose state. Just re-find button.
+                             pass
+                    else:
+                        log(f"Unknown navigation: {current_url}", "WARN")
+                        # If unknown, maybe we are at OTP page but URL is weird?
+                        break # Break to check commonly shared exit logic
+                else:
+                    log("Continue button not found on this attempt.", "WARN")
+                    time.sleep(2)
             
-            # Click Continue using JS for reliability
-            try:
-                self.driver.execute_script("arguments[0].click();", continue_btn)
-                log("Continue clicked (JS)!", "OK")
-            except:
-                continue_btn.click()
-                log("Continue clicked (Standard)!", "OK")
-
-            # Wait for navigation
-            log("Waiting for page to navigate...", "INFO")
-            time.sleep(5)
-            
-            # Check Result
+            # Check Result outside loop (if break or retries exhausted without definite Fail)
             current_url = self.driver.current_url
-            
             if "recover/code" in current_url:
-                log("Navigated to OTP page!", "OK")
-                return True
-                
-            elif "login/identify" in current_url:
-                log("Redirected back to identify page (Possible block or Rate Limit)", "WARN")
-                # DUMP HTML to find the "Why"
-                page_source = self.driver.page_source
-                self._save_failure_snapshot("redirect_loop_blocked")
-                
-                # Check for specific error phrases
-                lower_page = page_source.lower()
-                if "try again" in lower_page:
-                    log("!! BLOCK REASON: Rate Limit (Try Again Later) !!", "ERROR")
-                elif "limit" in lower_page:
-                    log("!! BLOCK REASON: Speed Limit !!", "ERROR")
-                
-                return False
+                 return True
                 
             else:
                 log(f"Unknown navigation: {current_url}", "WARN")
