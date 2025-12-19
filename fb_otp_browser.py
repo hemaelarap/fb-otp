@@ -67,6 +67,13 @@ except ImportError:
     print("[WARNING] webdriver-manager not installed. Run: pip install webdriver-manager")
     ChromeDriverManager = None
 
+try:
+    import undetected_chromedriver as uc
+    UNDETECTED_AVAILABLE = True
+except ImportError:
+    print("[WARNING] undetected-chromedriver not installed. Run: pip install undetected-chromedriver")
+    UNDETECTED_AVAILABLE = False
+
 # Colors
 class C:
     B = '\033[94m'
@@ -362,7 +369,17 @@ console.log("Proxy Auth Extension Active");'''
                     log(f"Using proxy: {proxy_host}:{proxy_port}", "INFO")
         
         try:
-            if ChromeDriverManager:
+            # Use undetected_chromedriver if available (better stealth)
+            if UNDETECTED_AVAILABLE:
+                log("Using undetected-chromedriver for enhanced stealth", "INFO")
+                self.driver = uc.Chrome(
+                    options=options,
+                    headless=self.headless,
+                    use_subprocess=False,
+                    version_main=None  # Auto-detect Chrome version
+                )
+                log("Undetected Chrome browser ready!", "OK")
+            elif ChromeDriverManager:
                 try:
                     driver_path = ChromeDriverManager().install()
                     # FIX: webdriver-manager 4.0.1 sometimes returns THIRD_PARTY_NOTICES
@@ -384,10 +401,12 @@ console.log("Proxy Auth Extension Active");'''
             else:
                 self.driver = webdriver.Chrome(options=options)
             
-            # Execute script to hide webdriver
-            self.driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+            # Execute script to hide webdriver (only if not using undetected_chromedriver)
+            if not UNDETECTED_AVAILABLE:
+                self.driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
             
-            log("Chrome browser ready!", "OK")
+            if not UNDETECTED_AVAILABLE:
+                log("Chrome browser ready!", "OK")
             return True
             
         except Exception as e:
