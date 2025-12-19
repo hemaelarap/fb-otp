@@ -248,7 +248,7 @@ class FacebookOTPBrowser:
         options.add_argument("--no-sandbox")
         options.add_argument("--disable-dev-shm-usage")
         options.add_argument("--disable-notifications")
-        options.add_argument("--lang=ar")  # Force Arabic language preference
+        options.add_argument("--lang=en-US")  # Force English language preference
         options.add_argument("--ignore-certificate-errors")
         options.add_argument("--ignore-ssl-errors")
         
