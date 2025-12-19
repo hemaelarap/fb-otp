@@ -783,7 +783,9 @@ console.log("Proxy Auth Extension Active");'''
             
             # ========== STEP 1: Open identify page and search ==========
             log("Step 1: Opening identify page...", "INFO")
-            self.driver.get("https://www.facebook.com/login/identify")
+            # User requested fixed Arabic URL to avoid language switching issues
+            target_url = "https://ar-ar.facebook.com/login/identify/?ctx=recover&from_login_screen=0"
+            self.driver.get(target_url)
             time.sleep(3 if self.headless else 2)
             self._handle_cookie_consent()  # Ensure cookies are handled
             
