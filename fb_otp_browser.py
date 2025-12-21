@@ -31,8 +31,15 @@ import random
 import threading
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
-import cv2
-import numpy as np
+
+# Optional Video Recording Dependencies
+try:
+    import cv2
+    import numpy as np
+    VIDEO_AVAILABLE = True
+except ImportError:
+    VIDEO_AVAILABLE = False
+    print("[WARN] OpenCV not found. Video recording disabled.")
 
 # Fix console encoding
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
@@ -206,6 +213,9 @@ class ScreenRecorder:
 
     def start(self):
         """Start recording in a background thread"""
+        if not VIDEO_AVAILABLE:
+            return
+            
         if self.recording:
             return
         
@@ -216,6 +226,9 @@ class ScreenRecorder:
 
     def stop(self):
         """Stop recording and save file"""
+        if not VIDEO_AVAILABLE:
+            return
+
         self.recording = False
         if self.thread:
             self.thread.join(timeout=5)
@@ -225,6 +238,9 @@ class ScreenRecorder:
 
     def _record_loop(self):
         """Capture screenshots and write to video"""
+        if not VIDEO_AVAILABLE:
+            return
+            
         # Determine Frame Size from first screenshot
         try:
             png = self.driver.get_screenshot_as_png()
@@ -1247,20 +1263,27 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
         finally:
             # STOP RECORDING AND SEND VIDEO
             try:
-                if 'recorder' in locals() and recorder:
+                if 'recorder' in locals() and recorder and VIDEO_AVAILABLE:
                     recorder.stop()
                     log("Stopped video recording.", "INFO")
                     
                     if os.path.exists(video_file):
                         caption = f"Process Video | {phone} | Status: {result['status']}"
                         self.send_telegram_video(caption, video_file)
-                        
-                        # Cleanup (Optional: remove file after sending to save space)
-                        # os.remove(video_file)
                     else:
-                        log("Video file not found!", "WARN")
+                        log("Video file not generated (using fallback stats).", "WARN")
+                
+                # Fallback: If no video, try sending a photo dump if one exists
+                # (You may want to re-implement screenshot logic here if video is critical, 
+                # but currently we rely on video. If it fails, we assume no visual sent)
+                if not VIDEO_AVAILABLE:
+                     log("Video skipped (OpenCV missing). Sending final screenshot.", "INFO")
+                     if self.driver:
+                         self.driver.save_screenshot("debug_final_fallback.png")
+                         self.send_telegram_photo(f"Final State ({phone})", "debug_final_fallback.png")
+
             except Exception as e:
-                log(f"Error handling video: {e}", "WARN")
+                log(f"Error handling video/media: {e}", "WARN")
 
             self._close_driver()
 
