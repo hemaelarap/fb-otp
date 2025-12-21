@@ -810,16 +810,37 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
                 log("Account FOUND (URL check)!", "OK")
                 return "FOUND"
             
-            # THIRD: Check for "Try Another Way" needed (Login page redirect)
-            if "login" in current_url and "recover" not in current_url:
-                 # Check for the button
-                 try:
-                     try_another = self.driver.find_elements(By.CSS_SELECTOR, "a[href*='/recover/initiate/?is_from_lara_screen=1']")
-                     if try_another:
-                         log("Redirected to Login - Found 'Try Another Way' button", "WARN")
-                         return "TRY_ANOTHER_WAY"
-                 except:
-                     pass
+            # THIRD: Check for Login page with "Try Another Way" button
+            if "login" in current_url or "password" in page_source:
+                 # Try to find and click "Try another way" button
+                 try_another_selectors = [
+                     (By.XPATH, "//button[contains(text(), 'Try another way')]"),
+                     (By.XPATH, "//a[contains(text(), 'Try another way')]"),
+                     (By.XPATH, "//div[contains(text(), 'Try another way')]"),
+                     (By.XPATH, "//span[contains(text(), 'Try another way')]"),
+                     (By.CSS_SELECTOR, "a[href*='/recover/initiate']"),
+                     (By.CSS_SELECTOR, "a[href*='is_from_lara_screen']"),
+                 ]
+                 
+                 for by, selector in try_another_selectors:
+                     try:
+                         btn = self.driver.find_element(by, selector)
+                         if btn and btn.is_displayed():
+                             log("Found 'Try Another Way' button - clicking...", "INFO")
+                             try:
+                                 btn.click()
+                             except:
+                                 self.driver.execute_script("arguments[0].click();", btn)
+                             time.sleep(3)
+                             log("Clicked 'Try Another Way' - continuing to SMS selection", "OK")
+                             return "FOUND"  # Proceed to step 5 (SMS selection)
+                     except:
+                         continue
+                 
+                 # If button not found but we're on login page
+                 if "try another way" in page_source:
+                     log("Detected 'Try another way' text but couldn't click", "WARN")
+                     return "TRY_ANOTHER_WAY"
 
             # FOURTH: Check for multiple accounts
             if self._check_multiple_accounts() > 0:
