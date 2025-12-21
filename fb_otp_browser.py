@@ -849,8 +849,7 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
                     
             except:
                 pass
-            except:
-                pass
+
             
             # Look for div or button with SMS text
             try:
