@@ -679,6 +679,19 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
             log(f"Error clicking search: {e}", "ERROR")
             return False
     
+    def _check_multiple_accounts(self):
+        """Check if multiple accounts are displayed"""
+        try:
+            # Look for the list of accounts
+            # Selector: tr td._9okr (Wrapper for each account)
+            accounts = self.driver.find_elements(By.CSS_SELECTOR, "tr td._9okr")
+            if accounts and len(accounts) > 0:
+                log(f"Detected {len(accounts)} multiple accounts!", "WARN")
+                return len(accounts)
+            return 0
+        except:
+            return 0
+
     def step4_check_account_found(self):
         """Step 4: Check if account was found"""
         log("Step 4: Checking if account exists...")
@@ -691,12 +704,37 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
             page_source = self.driver.page_source.lower()
             current_url = self.driver.current_url.lower()
             
-            # FIRST: Check URL for recovery (most reliable)
+            # FIRST: Check for specific "No Search Results" error
+            try:
+                error_box = self.driver.find_element(By.CSS_SELECTOR, ".pam.uiBoxRed")
+                error_text = error_box.text.lower()
+                if "no search results" in error_text or "didn't match" in error_text:
+                    log("Account NOT FOUND (Error Box)!", "WARN")
+                    return "NOT_FOUND"
+            except:
+                pass
+
+            # SECOND: Check URL for recovery (most reliable)
             if "recover" in current_url or "reset" in current_url:
                 log("Account FOUND (URL check)!", "OK")
                 return "FOUND"
             
-            # SECOND: Check for recovery page indicators (check FOUND first!)
+            # THIRD: Check for "Try Another Way" needed (Login page redirect)
+            if "login" in current_url and "recover" not in current_url:
+                 # Check for the button
+                 try:
+                     try_another = self.driver.find_elements(By.CSS_SELECTOR, "a[href*='/recover/initiate/?is_from_lara_screen=1']")
+                     if try_another:
+                         log("Redirected to Login - Found 'Try Another Way' button", "WARN")
+                         return "TRY_ANOTHER_WAY"
+                 except:
+                     pass
+
+            # FOURTH: Check for multiple accounts
+            if self._check_multiple_accounts() > 0:
+                return "MULTIPLE_ACCOUNTS"
+
+            # FIFTH: Check for recovery page indicators (check FOUND first!)
             found_indicators = [
                 "recover",
                 "reset",
@@ -713,7 +751,7 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
                     log("Account FOUND!", "OK")
                     return "FOUND"
             
-            # THIRD: Check for "not found" indicators (only after checking FOUND)
+            # SIXTH: Check for "not found" indicators (only after checking FOUND)
             not_found_indicators = [
                 "no search results",
                 "no account found",
@@ -731,7 +769,7 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
                     log(f"Account NOT FOUND (Keyword: {indicator})", "WARN")
                     return "NOT_FOUND"
                     
-            # FOURTH: Check for Profile Card (Visual element)
+            # Check for Profile Card (Visual element)
             try:
                 if self.driver.find_elements(By.CSS_SELECTOR, '.uiHeaderTitle') or self.driver.find_elements(By.CSS_SELECTOR, 'form[action*="recover"]'):
                      log("Account FOUND (Visual check)!", "OK")
@@ -740,12 +778,11 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
                 pass
 
             # Fallback
-            log("State unsure, assuming FOUND to proceed to next check", "INFO")
-            # Save debug screenshot for unsure state
-            self._save_failure_snapshot("step4_unsure_state")
-            return "FOUND"
-            
-            # If we're not sure, assume FOUND and try to continue
+            log("State unsure, checking specific elements for not found...", "INFO")
+            # Final specific check for the red box content if not caught earlier
+            if "pam uiboxred" in page_source:
+                 return "NOT_FOUND"
+
             log("Unknown result - assuming FOUND and continuing...", "WARN")
             return "FOUND"
             
@@ -794,11 +831,24 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
                         
                         if is_sms and not is_email:
                             radio.click()
-                            log("Selected SMS radio button!", "OK")
+                            log("Selected SMS radio button (Text Match)!", "OK")
                             time.sleep(0.3)
                             return True
                     except:
                         continue
+                        
+                # 3. Try Exact ID Selector (New)
+                try:
+                    sms_radios = self.driver.find_elements(By.CSS_SELECTOR, "input[type='radio'][id*='send_sms']")
+                    if sms_radios:
+                        sms_radios[0].click()
+                        log("Selected SMS radio button (ID Match)!", "OK")
+                        return True
+                except:
+                    pass
+                    
+            except:
+                pass
             except:
                 pass
             
@@ -911,6 +961,9 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
     
     def send_otp(self, phone):
         """Main function: Send OTP to phone - 3-STEP FLOW"""
+        original_phone = phone
+        phone = format_phone(phone)
+        
         print(f"\n{'='*60}")
         print(f"{C.BOLD}{C.CYAN}   Facebook OTP - {phone}{C.END}")
         print("="*60)
@@ -923,295 +976,136 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
                 result["message"] = "Failed to setup browser"
                 return result
             
-            # Verify proxy is working by checking IP
-            try:
-                self.driver.get("https://ipv4.webshare.io/")
-                time.sleep(1)
-                ip_text = self.driver.find_element(By.TAG_NAME, "body").text.strip()
-                if ip_text:
-                    log(f"Current IP: {ip_text}", "OK")
-            except Exception as e:
-                log(f"Could not check IP (Continuing flow): {e}", "WARN")
+            # LOOP for Multiple Accounts (Default 1 pass)
+            max_accounts_to_process = 5
+            accounts_processed = 0
             
-            # ========== STEP 1: Open identify page and search ==========
-            log("Step 1: Opening identify page...", "INFO")
-            # User requested fixed Arabic URL to avoid language switching issues - Mobile
-            target_url = "https://m.facebook.com/login/identify/?ctx=recover&from_login_screen=0&locale=ar_AR"
-            self.driver.get(target_url)
-            time.sleep(3 if self.headless else 2)
-            self._handle_cookie_consent()  # Ensure cookies are handled
-            
-            # Log current URL
-            log(f"Current URL: {self.driver.current_url}", "INFO")
-            
-            # Find input field
-            input_field = None
-            input_selectors = [
-                (By.ID, "identify_email"),
-                (By.NAME, "email"),
-                (By.CSS_SELECTOR, "input[name='email']"),
-                (By.CSS_SELECTOR, "input[type='text']"),
-            ]
-            
-            for attempt in range(3):
-                for by, selector in input_selectors:
-                    try:
-                        input_field = WebDriverWait(self.driver, 5).until(
-                            EC.presence_of_element_located((by, selector))
-                        )
-                        if input_field and input_field.is_displayed():
-                            log(f"Found input using: {selector}", "OK")
-                            break
-                    except:
-                        continue
-                if input_field:
-                    break
-                log(f"Retry {attempt + 1}: Refreshing page...", "WARN")
-                self.driver.refresh()
-                time.sleep(2)
-            
-            if not input_field:
-                result["message"] = "Could not find identify input"
-                result["last_url"] = self.driver.current_url
-                return result
-            
-            
-            # Enter phone with human-like typing
-            input_field.clear()
-            time.sleep(random.uniform(0.3, 0.8))  # Think before typing
-            
-            # Type character by character with random delays
-            for char in phone:
-                input_field.send_keys(char)
-                time.sleep(random.uniform(0.08, 0.25))  # Human typing speed
-            
-            time.sleep(random.uniform(1.5, 3.0))  # Review before pressing Enter
-            
-            # DEBUG: Screenshot BEFORE search
-            try:
-                self.driver.save_screenshot("debug_before_search.png")
-                self.send_telegram_photo(f"Before Search ({phone})", "debug_before_search.png")
-            except: pass
-
-            input_field.send_keys(Keys.ENTER)
-            log(f"Searching for {phone}...", "OK")
-            
-            # Wait for search result (Increased to 15s to avoid rate limit)
-            time.sleep(15)
-            
-            # DEBUG: Screenshot AFTER search
-            try:
-                self.driver.save_screenshot("debug_after_search.png")
-                self.send_telegram_photo(f"After Search ({phone})", "debug_after_search.png")
-            except: pass
-            
-            # Log URL after search
-            log(f"URL after search: {self.driver.current_url}", "INFO")
-            
-            # Check for POSITIVE match first (Profile card / 'Is this you')
-            try:
-                # Look for 'send_sms' or 'reset_password' indicators in URL
-                if "recover" in self.driver.current_url or "reset" in self.driver.current_url:
-                    log("Positive match by URL!", "OK")
-                else:
-                    # Look for profile card or specific texts
-                    page_source = self.driver.page_source.lower()
-                    positive_kws = ["send code", "isi koda", "sms", "text message", "whatsapp", "email", "facebook user", "is this you", "identify"]
-                    if any(kw in page_source for kw in positive_kws):
-                         log("Positive match by keywords!", "OK")
-            except:
-                pass
-
-            # Check if GENUINELY not found
-            page_source = self.driver.page_source.lower()
-            
-            # Stricter not found keywords
-            not_found_keywords = [
-                "no search results",
-                "your search did not return any results",
-                "didn't match any account",
-                "لم نتمكن من العثور",
-                "لا توجد نتائج بحث"
-            ]
-            
-            # Only trigger NOT FOUND if we are DEFINITELY on an error page (not just loading)
-            current_url = self.driver.current_url.lower()
-            is_identify_page = "identify" in current_url or "login" in current_url
-            
-            if is_identify_page and any(kw in page_source for kw in not_found_keywords):
-                # Double check: verify 'initiate' is NOT in URL (which would mean we actually succeeded)
-                if "initiate" not in current_url:
-                    log("Account NOT FOUND", "WARN")
-                    # DEBUG: Save snapshot to understand why it wasn't found in headless
-                    self._save_failure_snapshot("NOT_FOUND_debug")
-                    try:
-                        with open("debug_not_found.html", "w", encoding="utf-8") as f:
-                            f.write(page_source)
-                        log("Saved debug_not_found.html", "INFO")
-                    except:
-                        pass
-                        
-                    result["status"] = "NOT_FOUND"
-                    result["message"] = "Phone not linked to Facebook"
-                    result["last_url"] = self.driver.current_url
-                    print(f"{C.Y}   [NOT FOUND]{C.END}")
-                    print(f"   Last URL: {result['last_url']}")
-                    return result
-            
-            log("Account FOUND! Moving to step 2...", "OK")
-            
-            # ========== STEP 2: Navigate to recover/initiate ==========
-            log("Step 2: Opening recover/initiate page...", "INFO")
-            
-            # Force navigation to the specific URL requested
-            recovery_url = "https://m.facebook.com/recover/initiate/?is_from_lara_screen=1"
-            self.driver.get(recovery_url)
-            log(f"Request sent to: {recovery_url}", "INFO")
-            
-            # Wait for page load
-            time.sleep(3 if self.headless else 2)
-            
-            # Verify we are not redirected back immediately
-            current_url = self.driver.current_url
-            log(f"Current URL: {current_url}", "INFO")
-            
-            if "recover/initiate" not in current_url and "recover/code" not in current_url:
-                # We were redirected back
-                if "login/identify" in current_url or "login" in current_url:
-                     # Check for block
-                     page_source = self.driver.page_source
-                     if "You're Temporarily Blocked" in page_source or "going too fast" in page_source:
-                         log("!! BLOCK DETECTED (Step 2): You're Temporarily Blocked !!", "ERROR")
-                         self._save_failure_snapshot("blocked_step2")
-                         return {"phone": phone, "status": "BLOCKED", "message": "Rate limited at Step 2"}
-                     else:
-                         log("Silent redirect back to identify page in Step 2.", "WARN")
-                         self._save_failure_snapshot("step2_redirect_fail")
-                         # Ensure we fail here instead of proceeding to Step 3 blindly
-                         pass 
-
-            # Retry Loop for Redirect/Rate Limit (Step 3)
-            max_retries = 3
-            for attempt in range(max_retries):
-                log(f"Step 3: Clicking Continue (Attempt {attempt+1}/{max_retries})...", "INFO")
+            # Only loop if we detect multiple accounts, but we need an outer loop to handle the retry logic
+            while accounts_processed < max_accounts_to_process:
                 
-                # ... (Find Button Logic - simplified re-search) ...
-                continue_btn = None
-                try:
-                    # Specific button
-                    continue_btn = WebDriverWait(self.driver, 5).until(
-                        EC.element_to_be_clickable((By.CSS_SELECTOR, "button[name='reset_action'][value='1']"))
-                    )
-                except:
-                    pass
-                
-                if not continue_btn:
-                     try:
-                        continue_btn = WebDriverWait(self.driver, 3).until(
-                            EC.element_to_be_clickable((By.CSS_SELECTOR, "button._42ft._4jy0._9nq0"))
-                        )
-                     except:
-                        pass
-                
-                if not continue_btn:
-                     # Fallback to any submit
-                     try:
-                        continue_btn = self.driver.find_element(By.CSS_SELECTOR, "button[type='submit']")
-                     except:
-                        pass
-
-                if continue_btn:
-                    # Click Logic
-                    self.random_sleep(5, 8)
-                    try:
-                        self.driver.execute_script("arguments[0].click();", continue_btn)
-                        log(f"Continue clicked (JS) - Attempt {attempt+1}", "OK")
-                    except:
-                        continue_btn.click()
-                        log(f"Continue clicked (Std) - Attempt {attempt+1}", "OK")
-                    
-                    # Wait for navigation
-                    log("Waiting for navigation...", "INFO")
-                    time.sleep(5)
-                    
-                    current_url = self.driver.current_url
-                    
-                    if "recover/code" in current_url:
-                        log("Navigated to OTP page!", "OK")
-                        return True
-                    
-                    elif "login/identify" in current_url:
-                        # Check for specific block message
-                        page_source = self.driver.page_source
-                        if "You're Temporarily Blocked" in page_source or "going too fast" in page_source:
-                             log("!! BLOCK DETECTED: You're Temporarily Blocked (Going too fast) !!", "ERROR")
-                             self._save_failure_snapshot("blocked_temporarily")
-                             return False
-
-                        log(f"Redirected back to identify (Attempt {attempt+1}). Waiting...", "WARN")
-                        time.sleep(5) # Wait before retry
-                        # Don't return False yet, Try again!
-                        if attempt == max_retries - 1:
-                             log("!! BLOCK REASON: Rate Limit (Persistent) !!", "ERROR")
-                             # DUMP HTML to find the "Why"
-                             page_source = self.driver.page_source
-                             self._save_failure_snapshot("redirect_loop_blocked_final")
-                             return False
-                        else:
-                             # Refresh before retry? No, might lose state. Just re-find button.
-                             pass
-                    else:
-                        log(f"Unknown navigation: {current_url}", "WARN")
-                        # If unknown, maybe we are at OTP page but URL is weird?
-                        break # Break to check commonly shared exit logic
-                else:
-                    log("Continue button not found on this attempt.", "WARN")
+                # If this is the 2nd+ iteration, we need to restart the flow to get a clean state
+                if accounts_processed > 0:
+                    log(f"--- Processing Account #{accounts_processed + 1} ---", "INFO")
                     time.sleep(2)
-            
-            # Check Result outside loop (if break or retries exhausted without definite Fail)
-            current_url = self.driver.current_url
-            if "recover/code" in current_url:
-                 return True
                 
-            else:
-                log(f"Unknown navigation: {current_url}", "WARN")
-                self._save_failure_snapshot("step3_unknown_nav")
-                return False
+                # ========== STEP 1: Open identify page and search ==========
+                if not self.step1_open_recovery_page():
+                    result["message"] = "Failed to open recovery page"
+                    break # Critical failure
                 
-        except Exception as e:
-            log(f"Error clicking search: {e}", "ERROR")
-            self._save_failure_snapshot("step3_click_error")
-            result["last_url"] = self.driver.current_url
-            log(f"Final URL: {result['last_url']}", "INFO")
-            
-            # Check success
-            if "/recover/code" in result["last_url"] or "rm=send_sms" in result["last_url"]:
-                log("*** OTP SENT SUCCESSFULLY! ***", "SUCCESS")
-                result["status"] = "OTP_SENT"
-                result["message"] = "OTP sent successfully"
-                print(f"{C.G}{C.BOLD}   [SUCCESS] OTP sent!{C.END}")
-            else:
-                # Check for text confirmation in page source (AJAX update)
-                page_source = self.driver.page_source.lower()
-                success_keywords = ["enter code", "security code", "digit code", "we sent", "enter the code", "أدخل الرمز", "الرمز المكون", "رمز النزاع", "sent a code"]
+                # Enter phone
+                if not self.step2_enter_phone(phone):
+                    result["message"] = "Failed to enter phone"
+                    break
                 
-                if any(kw in page_source for kw in success_keywords):
-                    result["status"] = "OTP_SENT"
-                    result["message"] = "OTP sent (detected via text)"
-                    print(f"{C.G}   [OTP SENT] Check phone (Text Confirmed){C.END}")
-                else:
-                    log("Continue clicked but page didn't navigate to code page", "WARN")
+                # Search
+                if not self.step3_click_search():
+                    result["message"] = "Failed to click search"
+                    break
                     
-                    # Check if we were redirected back to identify (Failure loop)
-                    if "login/identify" in self.driver.current_url:
-                        result["status"] = "FAILED"
-                        result["message"] = "Redirected back to identify page (Possible block)"
-                        print(f"{C.R}   [FAILED] Redirected to identify page{C.END}")
-                    else:
-                        result["last_url"] = self.driver.current_url
-                        print(f"   Last URL: {result['last_url']}")
-                        return result
+                # Check Result
+                status = self.step4_check_account_found()
                 
+                if status == "NOT_FOUND":
+                    log("Account NOT FOUND (Final)", "WARN")
+                    result["status"] = "NOT_FOUND"
+                    result["message"] = "Number not linked to any Facebook account"
+                    # Capture debug
+                    self._save_failure_snapshot("not_found_final")
+                    break
+                
+                elif status == "TRY_ANOTHER_WAY":
+                    log("Redirected to Login - Clicking 'Try Another Way'...", "INFO")
+                    try:
+                        # Click the button
+                        btn = self.driver.find_element(By.CSS_SELECTOR, "a[href*='/recover/initiate/?is_from_lara_screen=1']")
+                        btn.click()
+                        time.sleep(5)
+                        # Verify we are now on recovery page
+                        if "recover" in self.driver.current_url or "reset" in self.driver.current_url:
+                             status = "FOUND" # Proceed to next steps
+                        else:
+                             log("Failed to navigate to recovery after clicking button", "ERROR")
+                             break
+                    except Exception as e:
+                        log(f"Error processing Try Another Way: {e}", "ERROR")
+                        break
+
+                if status == "MULTIPLE_ACCOUNTS":
+                    log("Multiple accounts detected!", "INFO")
+                    # Find all "This is me" buttons
+                    try:
+                        buttons = self.driver.find_elements(By.CSS_SELECTOR, "a[role='button']")
+                        # Filter for "This is me" buttons if possible, or just take non-cancel ones
+                        # The text usually "This is my account"
+                        valid_buttons = []
+                        for b in buttons:
+                             if "account" in b.text.lower() or "هذا إيميل" in b.text or "حسابي" in b.text:
+                                 valid_buttons.append(b)
+                        
+                        num_accounts = len(valid_buttons)
+                        log(f"Found {num_accounts} valid account buttons.", "INFO")
+                        
+                        if accounts_processed >= num_accounts:
+                            log("All accounts processed.", "OK")
+                            break
+                            
+                        # Click the button for the current index
+                        try:
+                            target_btn = valid_buttons[accounts_processed]
+                            log(f"Selecting account #{accounts_processed + 1}...", "INFO")
+                            target_btn.click()
+                            time.sleep(5)
+                            # Now we continue to Step 5...
+                        except Exception as e:
+                            log(f"Error identifying account button: {e}", "ERROR")
+                            break
+                            
+                    except Exception as e:
+                        log(f"Error handling multiple accounts: {e}", "ERROR")
+                        break
+                elif status == "FOUND":
+                    if accounts_processed > 0:
+                        # We are looping but status is just FOUND?
+                        # This implies we might have lost the multi-account state or it was a single account
+                         break # Stop looping if we only found one
+                else:
+                    break
+
+
+                # ========== STEP 5 & 6: Recover ==========
+                # Step 5: Select SMS
+                if self.step5_select_sms_option():
+                    # Step 6: Send Code
+                    if self.step6_send_code():
+                        result["status"] = "OTP_SENT"
+                        result["message"] = f"OTP Sent to account #{accounts_processed + 1}"
+                        # If we just wanted one, we return. If we want ALL, we verify successful send.
+                        log(f"OTP Sent for Account {accounts_processed + 1}", "SUCCESS")
+                        
+                        # Check if we should stop or continue?
+                        # Usually user wants 'an' account. But if multiple, we try the first one that works?
+                        # Or process all? Let's process all as requested "start opening every account".
+                        pass
+                else:
+                    log(f"Could not find SMS option for Account {accounts_processed + 1}", "WARN")
+
+                accounts_processed += 1
+                
+                # Check if we should loop again (only if valid multiple accounts were found prev)
+                # If we were in single account mode, break
+                if status == "FOUND" or status == "TRY_ANOTHER_WAY":
+                    break
+            
+            # Final result check
+            if result["status"] == "OTP_SENT":
+                 return result
+            elif result["status"] == "NOT_FOUND":
+                 return result
+            else:
+                 result["status"] = "FAILED"
+                 return result
+
         except Exception as e:
             log(f"Error: {e}", "ERROR")
             result["message"] = str(e)
