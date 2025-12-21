@@ -31,6 +31,8 @@ import random
 import threading
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
+import cv2
+import numpy as np
 
 # Fix console encoding
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
@@ -191,6 +193,79 @@ class ProxyManager:
             }
         return None
 
+
+class ScreenRecorder:
+    """Records the browser window to a video file"""
+    def __init__(self, driver, filename):
+        self.driver = driver
+        self.filename = filename
+        self.recording = False
+        self.thread = None
+        self.writer = None
+        self.lock = threading.Lock()
+
+    def start(self):
+        """Start recording in a background thread"""
+        if self.recording:
+            return
+        
+        self.recording = True
+        self.thread = threading.Thread(target=self._record_loop)
+        self.thread.daemon = True
+        self.thread.start()
+
+    def stop(self):
+        """Stop recording and save file"""
+        self.recording = False
+        if self.thread:
+            self.thread.join(timeout=5)
+        
+        if self.writer:
+            self.writer.release()
+
+    def _record_loop(self):
+        """Capture screenshots and write to video"""
+        # Determine Frame Size from first screenshot
+        try:
+            png = self.driver.get_screenshot_as_png()
+            img_array = np.frombuffer(png, np.uint8)
+            img = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
+            height, width, layers = img.shape
+            size = (width, height)
+            
+            # Initialize Video Writer (MP4)
+            # using 'mp4v' codec
+            fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+            self.writer = cv2.VideoWriter(self.filename, fourcc, 5.0, size)
+            
+            while self.recording:
+                try:
+                    start_time = time.time()
+                    
+                    if not self.driver: 
+                        break
+
+                    png = self.driver.get_screenshot_as_png()
+                    img_array = np.frombuffer(png, np.uint8)
+                    img = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
+                    
+                    if self.writer:
+                        self.writer.write(img)
+                    
+                    # Target 5 FPS (0.2s per frame)
+                    elapsed = time.time() - start_time
+                    delay = max(0, 0.2 - elapsed)
+                    time.sleep(delay)
+                    
+                except Exception as e:
+                    # If driver is closed or other error, stop loop
+                    break
+        except Exception as e:
+            print(f"[WARN] Recorder init failed: {e}")
+            pass
+        finally:
+            if self.writer:
+                self.writer.release()
 
 class FacebookOTPBrowser:
     """Facebook OTP Automation using Selenium Browser"""
@@ -490,6 +565,54 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
                 log(f"Failed to send Telegram photo: {response.text}", "WARN")
         except Exception as e:
             log(f"Error sending Telegram photo: {e}", "WARN")
+
+    def send_telegram_video(self, caption, file_path):
+        """Send a video to the configured Telegram chat."""
+        token = os.environ.get("TELEGRAM_TOKEN")
+        chat_id = os.environ.get("TELEGRAM_CHAT_ID")
+        
+        if not token or not chat_id:
+            log("Telegram credentials not found, skipping video send.", "WARN")
+            return
+
+        try:
+            url = f"https://api.telegram.org/bot{token}/sendVideo"
+            with open(file_path, "rb") as f:
+                files = {"video": f}
+                data = {"chat_id": chat_id, "caption": caption}
+                # Increase timeout for video upload
+                response = requests.post(url, files=files, data=data, timeout=60)
+                
+            if response.status_code == 200:
+                log(f"Sent Telegram video: {caption}", "OK")
+            else:
+                log(f"Failed to send Telegram video: {response.text}", "WARN")
+        except Exception as e:
+            log(f"Error sending Telegram video: {e}", "WARN")
+
+    def send_telegram_video(self, caption, file_path):
+        """Send a video to the configured Telegram chat."""
+        token = os.environ.get("TELEGRAM_TOKEN")
+        chat_id = os.environ.get("TELEGRAM_CHAT_ID")
+        
+        if not token or not chat_id:
+            log("Telegram credentials not found, skipping video send.", "WARN")
+            return
+
+        try:
+            url = f"https://api.telegram.org/bot{token}/sendVideo"
+            with open(file_path, "rb") as f:
+                files = {"video": f}
+                data = {"chat_id": chat_id, "caption": caption}
+                # Increase timeout for video upload
+                response = requests.post(url, files=files, data=data, timeout=60)
+                
+            if response.status_code == 200:
+                log(f"Sent Telegram video: {caption}", "OK")
+            else:
+                log(f"Failed to send Telegram video: {response.text}", "WARN")
+        except Exception as e:
+            log(f"Error sending Telegram video: {e}", "WARN")
 
     def simulate_human_behavior(self):
         """Simulate human-like interactions with the page"""
@@ -975,6 +1098,12 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
                 result["message"] = "Failed to setup browser"
                 return result
             
+            # START VIDEO RECORDING
+            video_file = f"video_{phone}_{int(time.time())}.mp4"
+            recorder = ScreenRecorder(self.driver, video_file)
+            recorder.start()
+            log("Started video recording...", "INFO")
+            
             # LOOP for Multiple Accounts (Default 1 pass)
             max_accounts_to_process = 5
             accounts_processed = 0
@@ -1116,15 +1245,23 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
             return result
             
         finally:
-            # DEBUG: Final screenshot before closing
+            # STOP RECORDING AND SEND VIDEO
             try:
-                if self.driver:
-                    self.driver.save_screenshot("debug_final.png")
-                    self.send_telegram_photo(f"Final State ({phone})", "debug_final.png")
-                    log("Final screenshot sent to Telegram", "INFO")
+                if 'recorder' in locals() and recorder:
+                    recorder.stop()
+                    log("Stopped video recording.", "INFO")
+                    
+                    if os.path.exists(video_file):
+                        caption = f"Process Video | {phone} | Status: {result['status']}"
+                        self.send_telegram_video(caption, video_file)
+                        
+                        # Cleanup (Optional: remove file after sending to save space)
+                        # os.remove(video_file)
+                    else:
+                        log("Video file not found!", "WARN")
             except Exception as e:
-                log(f"Failed to send final screenshot: {e}", "WARN")
-            
+                log(f"Error handling video: {e}", "WARN")
+
             self._close_driver()
 
 
