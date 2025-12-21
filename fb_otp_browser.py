@@ -237,8 +237,7 @@ class FacebookOTPBrowser:
         log("Setting up Chrome browser...")
         
         # Mobile Viewport & User Agent (Android)
-        # iPad User Agent
-        ipad_ua = "Mozilla/5.0 (iPad; CPU OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Safari/605.1.15"
+        mobile_ua = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Mobile Safari/537.36"
         
         def get_configured_options(use_mobile_emulation=True):
             """Helper to generate fresh options"""
@@ -250,18 +249,17 @@ class FacebookOTPBrowser:
             # Anti-detection options
             options.add_argument("--disable-blink-features=AutomationControlled")
             
-            # UA & Window Size - iPad dimensions
-            options.add_argument(f"user-agent={ipad_ua}")
-            options.add_argument("--window-size=820,1180")  # iPad Air resolution
+            # UA & Window Size (Always Apply)
+            options.add_argument(f"user-agent={mobile_ua}")
+            options.add_argument("--window-size=375,812")
             
-            # Enable iPad emulation
             if use_mobile_emulation:
+                # Enable Mobile Emulation (Can cause crash on some drivers)
                 mobile_emulation = {
-                    "deviceMetrics": { "width": 820, "height": 1180, "pixelRatio": 2.0 },
-                    "userAgent": ipad_ua
+                    "deviceMetrics": { "width": 375, "height": 812, "pixelRatio": 3.0 },
+                    "userAgent": mobile_ua
                 }
                 options.add_experimental_option("mobileEmulation", mobile_emulation)
-
 
             options.add_argument("--start-maximized")
             options.add_argument("--disable-infobars")
@@ -598,10 +596,9 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
 
     def step1_open_recovery_page(self):
         """Step 1: Open Facebook, handle cookies, and navigate to recovery"""
-        log("Step 1: Opening Facebook Recovery Page (Desktop)...")
+        log("Step 1: Opening Facebook Recovery Page (Mobile)...")
         try:
-            # Use desktop version for better URL tracking
-            self.driver.get('https://www.facebook.com/login/identify/?ctx=recover&ars=facebook_login&from_login_screen=0')
+            self.driver.get('https://m.facebook.com/login/identify')
             self.random_sleep(8, 12)  # Longer wait to appear more human
             
             # Handle Cookie Consent (European/International IPs)
@@ -1146,35 +1143,29 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
                 log("Could not click any button!", "WARN")
                 return False
             
-            # Wait for page to navigate to code entry page
-            time.sleep(3)
+            # Wait and verify code was sent
+            time.sleep(2)
+            page_source = self.driver.page_source.lower()
+            current_url = self.driver.current_url.lower()
             
-            # Wait for code entry page indicators
-            for attempt in range(5):
-                page_source = self.driver.page_source.lower()
-                current_url = self.driver.current_url.lower()
-                
-                success_indicators = [
-                    "enter code",
-                    "we sent",
-                    "code sent",
-                    "check your phone",
-                    "enter the code",
-                    "أدخل الرمز",
-                    "تم الإرسال",
-                ]
-                
-                for indicator in success_indicators:
-                    if indicator in page_source:
-                        log("*** OTP CODE SENT SUCCESSFULLY! ***", "SUCCESS")
-                        return True
-                
-                if "code" in current_url or "recover/code" in current_url:
-                    log("*** OTP CODE SENT! ***", "SUCCESS")
+            success_indicators = [
+                "enter code",
+                "we sent",
+                "code sent",
+                "check your phone",
+                "enter the code",
+                "أدخل الرمز",
+                "تم الإرسال",
+            ]
+            
+            for indicator in success_indicators:
+                if indicator in page_source:
+                    log("*** OTP CODE SENT SUCCESSFULLY! ***", "SUCCESS")
                     return True
-                
-                # Wait more if page hasn't changed
-                time.sleep(1)
+            
+            if "code" in current_url:
+                log("*** OTP CODE SENT! ***", "SUCCESS")
+                return True
             
             # If we clicked but can't confirm, still return True but warn
             log("Button clicked - Code may have been sent - check phone!", "OK")
