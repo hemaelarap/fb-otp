@@ -686,7 +686,7 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
                         continue
                 if input_field:
                     break
-                time.sleep(1)
+                time.sleep(0.5)
             
             if not input_field:
                 log("Could not find input field", "ERROR")
@@ -695,7 +695,7 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
             # Clear and enter phone
             input_field.clear()
             input_field.send_keys(phone)
-            time.sleep(0.2)
+            time.sleep(0.1)
             
             log("Phone number entered!", "OK")
             return True
@@ -741,7 +741,7 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
                             self.driver.execute_script("arguments[0].click();", button)
                             log("Search/Continue button clicked (JS)!", "OK")
                         
-                        time.sleep(2)
+                        time.sleep(1)
                         
                         # Optional: Capture debug screenshot after search to confirm state
                         try:
@@ -758,7 +758,7 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
                 input_field = self.driver.find_element(By.CSS_SELECTOR, "input[name='email']")
                 input_field.send_keys(Keys.ENTER)
                 log("Pressed Enter to search", "OK")
-                time.sleep(1)
+                time.sleep(0.5)
                 return True
             except:
                 pass
@@ -842,7 +842,34 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
                      log("Detected 'Try another way' text but couldn't click", "WARN")
                      return "TRY_ANOTHER_WAY"
 
-            # FOURTH: Check for multiple accounts
+            # FOURTH: Check for "Choose your account" page (multiple accounts)
+            if "choose your account" in page_source:
+                log("Detected 'Choose your account' page - clicking first account...", "INFO")
+                try:
+                    # Find all clickable account rows
+                    account_selectors = [
+                        (By.CSS_SELECTOR, "div[role='button']"),
+                        (By.CSS_SELECTOR, "a[role='button']"),
+                        (By.XPATH, "//div[contains(@class, 'x1i10hfl')]"),  # Common FB clickable div
+                        (By.XPATH, "//div[contains(text(), '+')]"),  # Phone number display
+                    ]
+                    
+                    for by, selector in account_selectors:
+                        try:
+                            accounts = self.driver.find_elements(by, selector)
+                            if accounts and len(accounts) > 0:
+                                # Click the first account (usually matches phone number)
+                                accounts[0].click()
+                                log(f"Clicked first account option", "OK")
+                                self._take_step_snapshot("MULTI_ACC_SELECTED", "")
+                                time.sleep(2)
+                                return "FOUND"  # Proceed to next step
+                        except:
+                            continue
+                except Exception as e:
+                    log(f"Error clicking account: {e}", "WARN")
+            
+            # Fallback: Check for multiple accounts using old method
             if self._check_multiple_accounts() > 0:
                 return "MULTIPLE_ACCOUNTS"
 
@@ -911,12 +938,33 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
         time.sleep(0.5)
         
         try:
-            page_source = self.driver.page_source
+            page_source = self.driver.page_source.lower()
+            
+            # EARLY CHECK: Detect "Choose a way to log in" page (no SMS visible)
+            if "choose a way to log in" in page_source:
+                log("Detected 'Choose a way to log in' page...", "INFO")
+                
+                # First try to click "See more" to reveal more options
+                try:
+                    see_more = self.driver.find_element(By.XPATH, "//a[contains(text(), 'See more')]")
+                    if see_more:
+                        see_more.click()
+                        log("Clicked 'See more' to reveal more options...", "INFO")
+                        time.sleep(1)
+                        page_source = self.driver.page_source.lower()
+                except:
+                    pass
+                
+                # Now check if SMS option is available
+                if "sms" not in page_source and "text message" not in page_source:
+                    log("NO SMS OPTION AVAILABLE - Only email/notification/password options", "ERROR")
+                    self._take_step_snapshot("NO_SMS_OPTION", "")
+                    return False
             
             # PRIORITY 1: Check for "We'll send you a code" page with Continue button
             # This is the direct SMS confirmation page - just click Continue
             try:
-                if "send you a code" in page_source.lower() or "we'll send" in page_source.lower():
+                if "send you a code" in page_source or "we'll send" in page_source:
                     log("Detected SMS confirmation page - looking for Continue button...", "INFO")
                     continue_selectors = [
                         (By.XPATH, "//button[contains(text(), 'Continue')]"),
@@ -1017,6 +1065,25 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
                             continue
             except:
                 pass
+            
+            # CHECK: If page shows "Choose a way to log in" but no SMS found
+            page_source = self.driver.page_source.lower()
+            no_sms_indicators = [
+                "choose a way to log in",
+                "get code via facebook notification",
+                "get code or link via email",
+                "enter password to log in",
+            ]
+            
+            has_login_options = any(ind in page_source for ind in no_sms_indicators)
+            
+            if has_login_options:
+                # Check if SMS is available
+                sms_available = "sms" in page_source or "text message" in page_source
+                if not sms_available:
+                    log("NO SMS OPTION AVAILABLE - Only email/notification/password options found", "ERROR")
+                    self._take_step_snapshot("NO_SMS_OPTION", "")
+                    return False
             
             log("Could not find specific SMS option - may need manual selection", "WARN")
             return False
@@ -1247,8 +1314,11 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
                     if self.step6_send_code():
                         result["status"] = "OTP_SENT"
                         result["message"] = f"OTP Sent to account #{accounts_processed + 1}"
+                        result["otp_url"] = self.driver.current_url  # Capture final URL for OTP entry
+                        result["last_url"] = self.driver.current_url
                         self._take_step_snapshot("6_SendSuccess", phone)
                         log(f"OTP Sent for Account {accounts_processed + 1}", "SUCCESS")
+                        log(f"OTP URL: {result['otp_url']}", "INFO")
                     else:
                         result["message"] = "Failed to click send code"
                         self._take_step_snapshot("6_SendFail", phone)
