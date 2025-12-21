@@ -32,10 +32,6 @@ import threading
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-# Optional Video Recording Dependencies
-# Removed per user request
-VIDEO_AVAILABLE = False
-
 
 # Fix console encoding
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
@@ -1014,42 +1010,53 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
         log("Step 6: Sending OTP code...")
         
         try:
-            # Try clicking Continue/Send button multiple times
-            button_selectors = [
-                (By.CSS_SELECTOR, "button[type='submit']"),
+            # PRIORITY: Try Continue button first with JS fallback
+            continue_selectors = [
                 (By.XPATH, "//button[contains(text(), 'Continue')]"),
+                (By.XPATH, "//div[@role='button' and contains(text(), 'Continue')]"),
+                (By.XPATH, "//span[contains(text(), 'Continue')]"),
+                (By.CSS_SELECTOR, "button[type='submit']"),
                 (By.XPATH, "//button[contains(text(), 'Send')]"),
                 (By.XPATH, "//button[contains(text(), 'متابعة')]"),
                 (By.XPATH, "//button[contains(text(), 'إرسال')]"),
                 (By.CSS_SELECTOR, "[data-testid='recover_nonce_next_button']"),
-                (By.XPATH, "//a[contains(@href, 'recover/code')]"),
-                (By.XPATH, "//button"),  # Try any button
-                (By.CSS_SELECTOR, "button"),
-                (By.XPATH, "//input[@type='submit']"),
                 (By.CSS_SELECTOR, "[role='button']"),
             ]
             
             clicked = False
-            for _ in range(3):  # Try 3 times
-                for by, selector in button_selectors:
-                    try:
-                        buttons = self.driver.find_elements(by, selector)
-                        for button in buttons:
-                            try:
-                                if button.is_displayed() and button.is_enabled():
+            for by, selector in continue_selectors:
+                try:
+                    buttons = self.driver.find_elements(by, selector)
+                    for button in buttons:
+                        try:
+                            if button.is_displayed() and button.is_enabled():
+                                # Try standard click first
+                                try:
                                     button.click()
-                                    log(f"Clicked button: {selector}", "OK")
+                                    log(f"Clicked button (Standard): {selector}", "OK")
                                     clicked = True
-                                    time.sleep(0.5)
-                            except:
-                                continue
-                    except:
-                        continue
-                if clicked:
-                    break
-                time.sleep(0.3)
+                                except Exception as click_err:
+                                    # Fallback to JS click
+                                    self.driver.execute_script("arguments[0].click();", button)
+                                    log(f"Clicked button (JS): {selector}", "OK")
+                                    clicked = True
+                                
+                                if clicked:
+                                    time.sleep(2)  # Wait for page to respond
+                                    break
+                        except:
+                            continue
+                    if clicked:
+                        break
+                except:
+                    continue
             
-            # Check if code was sent
+            if not clicked:
+                log("Could not click any button!", "WARN")
+                return False
+            
+            # Wait and verify code was sent
+            time.sleep(2)
             page_source = self.driver.page_source.lower()
             current_url = self.driver.current_url.lower()
             
@@ -1058,6 +1065,7 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
                 "we sent",
                 "code sent",
                 "check your phone",
+                "enter the code",
                 "أدخل الرمز",
                 "تم الإرسال",
             ]
@@ -1071,7 +1079,8 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
                 log("*** OTP CODE SENT! ***", "SUCCESS")
                 return True
             
-            log("Code may have been sent - check phone!", "OK")
+            # If we clicked but can't confirm, still return True but warn
+            log("Button clicked - Code may have been sent - check phone!", "OK")
             return True
             
         except Exception as e:
