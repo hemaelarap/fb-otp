@@ -1200,12 +1200,6 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
                 else:
                     result["message"] = "Failed to select SMS"
                     self._take_step_snapshot("5_SMSFail", phone)
-                        
-                        # Check if we should stop or continue?
-                        # Usually user wants 'an' account. But if multiple, we try the first one that works?
-                        # Or process all? Let's process all as requested "start opening every account".
-                        pass
-                else:
                     log(f"Could not find SMS option for Account {accounts_processed + 1}", "WARN")
 
                 accounts_processed += 1
