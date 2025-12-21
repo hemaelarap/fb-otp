@@ -778,6 +778,10 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
         try:
             # Try different button selectors
             button_selectors = [
+                (By.XPATH, "//button[contains(text(), 'Continue')]"),
+                (By.XPATH, "//div[@role='button' and contains(text(), 'Continue')]"),
+                (By.XPATH, "//span[contains(text(), 'Continue')]"),
+                (By.XPATH, "//button[contains(@id, 'u_0_5_')]"),
                 (By.NAME, "did_submit"),
                 (By.CSS_SELECTOR, "button[name='did_submit']"),
                 (By.ID, "did_submit"),
@@ -796,7 +800,13 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
                     if button:
                         button.click()
                         log("Search button clicked!", "OK")
-                        time.sleep(1)
+                        time.sleep(2)
+                        # Optional: Capture debug screenshot after search to confirm state
+                        try:
+                             if not self.headless or (self.headless and not self.driver.current_url): # Simple check
+                                 self.driver.save_screenshot("debug_after_search.png")
+                                 self.send_telegram_photo("After Search Click", "debug_after_search.png")
+                        except: pass
                         return True
                 except:
                     continue
