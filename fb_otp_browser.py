@@ -33,13 +33,9 @@ from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # Optional Video Recording Dependencies
-try:
-    import cv2
-    import numpy as np
-    VIDEO_AVAILABLE = True
-except ImportError:
-    VIDEO_AVAILABLE = False
-    print("[WARN] OpenCV not found. Video recording disabled.")
+# Removed per user request
+VIDEO_AVAILABLE = False
+
 
 # Fix console encoding
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
@@ -201,87 +197,7 @@ class ProxyManager:
         return None
 
 
-class ScreenRecorder:
-    """Records the browser window to a video file"""
-    def __init__(self, driver, filename):
-        self.driver = driver
-        self.filename = filename
-        self.recording = False
-        self.thread = None
-        self.writer = None
-        self.lock = threading.Lock()
 
-    def start(self):
-        """Start recording in a background thread"""
-        if not VIDEO_AVAILABLE:
-            return
-            
-        if self.recording:
-            return
-        
-        self.recording = True
-        self.thread = threading.Thread(target=self._record_loop)
-        self.thread.daemon = True
-        self.thread.start()
-
-    def stop(self):
-        """Stop recording and save file"""
-        if not VIDEO_AVAILABLE:
-            return
-
-        self.recording = False
-        if self.thread:
-            self.thread.join(timeout=5)
-        
-        if self.writer:
-            self.writer.release()
-
-    def _record_loop(self):
-        """Capture screenshots and write to video"""
-        if not VIDEO_AVAILABLE:
-            return
-            
-        # Determine Frame Size from first screenshot
-        try:
-            png = self.driver.get_screenshot_as_png()
-            img_array = np.frombuffer(png, np.uint8)
-            img = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
-            height, width, layers = img.shape
-            size = (width, height)
-            
-            # Initialize Video Writer (MP4)
-            # using 'mp4v' codec
-            fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-            self.writer = cv2.VideoWriter(self.filename, fourcc, 5.0, size)
-            
-            while self.recording:
-                try:
-                    start_time = time.time()
-                    
-                    if not self.driver: 
-                        break
-
-                    png = self.driver.get_screenshot_as_png()
-                    img_array = np.frombuffer(png, np.uint8)
-                    img = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
-                    
-                    if self.writer:
-                        self.writer.write(img)
-                    
-                    # Target 5 FPS (0.2s per frame)
-                    elapsed = time.time() - start_time
-                    delay = max(0, 0.2 - elapsed)
-                    time.sleep(delay)
-                    
-                except Exception as e:
-                    # If driver is closed or other error, stop loop
-                    break
-        except Exception as e:
-            print(f"[WARN] Recorder init failed: {e}")
-            pass
-        finally:
-            if self.writer:
-                self.writer.release()
 
 class FacebookOTPBrowser:
     """Facebook OTP Automation using Selenium Browser"""
@@ -630,6 +546,28 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
         except Exception as e:
             log(f"Error sending Telegram video: {e}", "WARN")
 
+    def _take_step_snapshot(self, step_name, phone=""):
+        """Helper to take and send a snapshot for a specific step"""
+        try:
+            if not self.driver: return
+            
+            # Skip if headless and no page loaded (sometimes happens)
+            if self.headless and not self.driver.current_url: return
+
+            timestamp = int(time.time())
+            filename = f"snap_{step_name}_{timestamp}.png"
+            self.driver.save_screenshot(filename)
+            
+            # Send to Telegram
+            caption = f"Step: {step_name} | {phone}"
+            self.send_telegram_photo(caption, filename)
+            
+            # Clean up local file to save space? (Optional - keeping for now for debug)
+            # os.remove(filename) 
+            
+        except Exception as e:
+            log(f"Snapshot error ({step_name}): {e}", "WARN")
+
     def simulate_human_behavior(self):
         """Simulate human-like interactions with the page"""
         try:
@@ -683,8 +621,8 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
         """Click 'Decline optional cookies' - Clean Version"""
         log("Checking for cookie consent...", "INFO")
         try:
-            # Wait for the button to appear (timeout 5 seconds)
-            wait = WebDriverWait(self.driver, 5)
+            # Wait for the button to appear (timeout 2 seconds - OPTIMIZED)
+            wait = WebDriverWait(self.driver, 2)
             
             button = None
             try:
@@ -798,12 +736,20 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
                 try:
                     button = self.driver.find_element(by, selector)
                     if button:
-                        button.click()
-                        log("Search button clicked!", "OK")
+                        log(f"Found search/continue button: {selector}", "INFO")
+                        try:
+                            button.click()
+                            log("Search/Continue button clicked (Standard)!", "OK")
+                        except Exception as click_err:
+                            log(f"Standard click failed ({click_err}), trying JS Click...", "WARN")
+                            self.driver.execute_script("arguments[0].click();", button)
+                            log("Search/Continue button clicked (JS)!", "OK")
+                        
                         time.sleep(2)
+                        
                         # Optional: Capture debug screenshot after search to confirm state
                         try:
-                             if not self.headless or (self.headless and not self.driver.current_url): # Simple check
+                             if not self.headless or (self.headless and not self.driver.current_url): 
                                  self.driver.save_screenshot("debug_after_search.png")
                                  self.send_telegram_photo("After Search Click", "debug_after_search.png")
                         except: pass
@@ -1124,11 +1070,7 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
                 result["message"] = "Failed to setup browser"
                 return result
             
-            # START VIDEO RECORDING
-            video_file = f"video_{phone}_{int(time.time())}.mp4"
-            recorder = ScreenRecorder(self.driver, video_file)
-            recorder.start()
-            log("Started video recording...", "INFO")
+
             
             # LOOP for Multiple Accounts (Default 1 pass)
             max_accounts_to_process = 5
@@ -1145,20 +1087,32 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
                 # ========== STEP 1: Open identify page and search ==========
                 if not self.step1_open_recovery_page():
                     result["message"] = "Failed to open recovery page"
+                    self._take_step_snapshot("1_OpenFail", phone)
                     break # Critical failure
+                self._take_step_snapshot("1_Opened", phone)
                 
                 # Enter phone
+                self._take_step_snapshot("2_BeforePhone", phone)
                 if not self.step2_enter_phone(phone):
                     result["message"] = "Failed to enter phone"
+                    self._take_step_snapshot("2_PhoneFail", phone)
                     break
+                self._take_step_snapshot("2_AfterPhone", phone)
                 
                 # Search
+                self._take_step_snapshot("3_BeforeSearch", phone)
                 if not self.step3_click_search():
                     result["message"] = "Failed to click search"
+                    self._take_step_snapshot("3_SearchFail", phone)
                     break
+                # self._take_step_snapshot("3_AfterSearch", phone) # step3 has its own snapshot now
                     
                 # Check Result
+                self._take_step_snapshot("4_BeforeChekResult", phone)
                 status = self.step4_check_account_found()
+                
+                # Check 2: Try a quick snapshot of the result immediately
+                self._take_step_snapshot(f"4_ResultState_{status}", phone)
                 
                 if status == "NOT_FOUND":
                     log("Account NOT FOUND (Final)", "WARN")
@@ -1229,13 +1183,23 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
 
                 # ========== STEP 5 & 6: Recover ==========
                 # Step 5: Select SMS
+                self._take_step_snapshot("5_BeforeSMS", phone)
                 if self.step5_select_sms_option():
+                    self._take_step_snapshot("5_AfterSMS", phone)
+                    
                     # Step 6: Send Code
+                    self._take_step_snapshot("6_BeforeSend", phone)
                     if self.step6_send_code():
                         result["status"] = "OTP_SENT"
                         result["message"] = f"OTP Sent to account #{accounts_processed + 1}"
-                        # If we just wanted one, we return. If we want ALL, we verify successful send.
+                        self._take_step_snapshot("6_SendSuccess", phone)
                         log(f"OTP Sent for Account {accounts_processed + 1}", "SUCCESS")
+                    else:
+                        result["message"] = "Failed to click send code"
+                        self._take_step_snapshot("6_SendFail", phone)
+                else:
+                    result["message"] = "Failed to select SMS"
+                    self._take_step_snapshot("5_SMSFail", phone)
                         
                         # Check if we should stop or continue?
                         # Usually user wants 'an' account. But if multiple, we try the first one that works?
