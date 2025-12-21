@@ -1316,7 +1316,17 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
                         result["message"] = f"OTP Sent to account #{accounts_processed + 1}"
                         result["otp_url"] = self.driver.current_url  # Capture final URL for OTP entry
                         result["last_url"] = self.driver.current_url
-                        self._take_step_snapshot("6_SendSuccess", phone)
+                        
+                        # Send success snapshot with OTP URL in caption
+                        otp_caption = f"✅ OTP SENT | {phone}\n🔗 OTP URL:\n{result['otp_url']}"
+                        try:
+                            timestamp = int(time.time())
+                            filename = f"snap_6_SendSuccess_{timestamp}.png"
+                            self.driver.save_screenshot(filename)
+                            self.send_telegram_photo(otp_caption, filename)
+                        except Exception as e:
+                            log(f"Snapshot error: {e}", "WARN")
+                        
                         log(f"OTP Sent for Account {accounts_processed + 1}", "SUCCESS")
                         log(f"OTP URL: {result['otp_url']}", "INFO")
                     else:
