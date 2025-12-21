@@ -321,8 +321,8 @@ class FacebookOTPBrowser:
             # OPTION 2: Standard Chrome (Fallback)
             if not self.driver:
                 log("Falling back to Standard Chrome (Safe Mode)...", "INFO")
-                # Generate SAFE options (No mobileEmulation experimental option)
-                safe_options = get_configured_options(use_mobile_emulation=False)
+                # Generate SAFE options (Keep mobile emulation for standard chrome as it's stable there)
+                safe_options = get_configured_options(use_mobile_emulation=True)
                 
                 if ChromeDriverManager:
                     try:
