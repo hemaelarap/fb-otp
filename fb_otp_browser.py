@@ -237,9 +237,10 @@ class FacebookOTPBrowser:
         log("Setting up Chrome browser...")
         
         # Mobile Viewport & User Agent (Android)
-        mobile_ua = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Mobile Safari/537.36"
+        # Desktop User Agent
+        desktop_ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
         
-        def get_configured_options(use_mobile_emulation=True):
+        def get_configured_options(use_mobile_emulation=False):
             """Helper to generate fresh options"""
             options = Options()
             
@@ -249,17 +250,19 @@ class FacebookOTPBrowser:
             # Anti-detection options
             options.add_argument("--disable-blink-features=AutomationControlled")
             
-            # UA & Window Size (Always Apply)
-            options.add_argument(f"user-agent={mobile_ua}")
-            options.add_argument("--window-size=375,812")
+            # UA & Window Size - Laptop dimensions
+            options.add_argument(f"user-agent={desktop_ua}")
+            options.add_argument("--window-size=1366,768")  # Common laptop resolution
             
+            # Disable mobile emulation for desktop version
             if use_mobile_emulation:
-                # Enable Mobile Emulation (Can cause crash on some drivers)
+                # Keep for compatibility but default is now False
                 mobile_emulation = {
-                    "deviceMetrics": { "width": 375, "height": 812, "pixelRatio": 3.0 },
-                    "userAgent": mobile_ua
+                    "deviceMetrics": { "width": 1366, "height": 768, "pixelRatio": 1.0 },
+                    "userAgent": desktop_ua
                 }
                 options.add_experimental_option("mobileEmulation", mobile_emulation)
+
 
             options.add_argument("--start-maximized")
             options.add_argument("--disable-infobars")
