@@ -596,9 +596,10 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
 
     def step1_open_recovery_page(self):
         """Step 1: Open Facebook, handle cookies, and navigate to recovery"""
-        log("Step 1: Opening Facebook Recovery Page (Mobile)...")
+        log("Step 1: Opening Facebook Recovery Page (Desktop)...")
         try:
-            self.driver.get('https://m.facebook.com/login/identify')
+            # Use desktop version for better URL tracking
+            self.driver.get('https://www.facebook.com/login/identify/?ctx=recover&ars=facebook_login&from_login_screen=0')
             self.random_sleep(8, 12)  # Longer wait to appear more human
             
             # Handle Cookie Consent (European/International IPs)
@@ -1143,29 +1144,35 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
                 log("Could not click any button!", "WARN")
                 return False
             
-            # Wait and verify code was sent
-            time.sleep(2)
-            page_source = self.driver.page_source.lower()
-            current_url = self.driver.current_url.lower()
+            # Wait for page to navigate to code entry page
+            time.sleep(3)
             
-            success_indicators = [
-                "enter code",
-                "we sent",
-                "code sent",
-                "check your phone",
-                "enter the code",
-                "أدخل الرمز",
-                "تم الإرسال",
-            ]
-            
-            for indicator in success_indicators:
-                if indicator in page_source:
-                    log("*** OTP CODE SENT SUCCESSFULLY! ***", "SUCCESS")
+            # Wait for code entry page indicators
+            for attempt in range(5):
+                page_source = self.driver.page_source.lower()
+                current_url = self.driver.current_url.lower()
+                
+                success_indicators = [
+                    "enter code",
+                    "we sent",
+                    "code sent",
+                    "check your phone",
+                    "enter the code",
+                    "أدخل الرمز",
+                    "تم الإرسال",
+                ]
+                
+                for indicator in success_indicators:
+                    if indicator in page_source:
+                        log("*** OTP CODE SENT SUCCESSFULLY! ***", "SUCCESS")
+                        return True
+                
+                if "code" in current_url or "recover/code" in current_url:
+                    log("*** OTP CODE SENT! ***", "SUCCESS")
                     return True
-            
-            if "code" in current_url:
-                log("*** OTP CODE SENT! ***", "SUCCESS")
-                return True
+                
+                # Wait more if page hasn't changed
+                time.sleep(1)
             
             # If we clicked but can't confirm, still return True but warn
             log("Button clicked - Code may have been sent - check phone!", "OK")
