@@ -829,12 +829,31 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
             if self._check_multiple_accounts() > 0:
                 return "MULTIPLE_ACCOUNTS"
 
-            # FIFTH: Check for recovery page indicators (check FOUND first!)
+            # FIFTH: PRIORITY - Check for "not found" indicators FIRST (before FOUND)
+            not_found_indicators = [
+                "we couldn't find your account",
+                "couldn't find your account",
+                "no search results",
+                "no account found",
+                "we couldn't find",
+                "no results",
+                "create new account",
+                "لم نتمكن من العثور",
+                "لا توجد نتائج",
+                "لم يتم العثور",
+            ]
+            
+            for indicator in not_found_indicators:
+                if indicator in page_source:
+                    log(f"Account NOT FOUND (Keyword: {indicator})", "WARN")
+                    return "NOT_FOUND"
+
+            # SIXTH: Check for recovery page indicators (only after NOT_FOUND check)
             found_indicators = [
                 "recover",
                 "reset",
-                "your account",
                 "send code",
+                "we'll send you a code",
                 "reset your password",
                 "حسابك",
                 "إرسال الرمز",
@@ -845,24 +864,6 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
                 if indicator in page_source:
                     log("Account FOUND!", "OK")
                     return "FOUND"
-            
-            # SIXTH: Check for "not found" indicators (only after checking FOUND)
-            not_found_indicators = [
-                "no search results",
-                "no account found",
-                "we couldn't find",
-                "no results",
-                "لم نتمكن من العثور",
-                "لا توجد نتائج",
-                "لم يتم العثور",
-                "try again",
-                "حاول مرة أخرى",
-            ]
-            
-            for indicator in not_found_indicators:
-                if indicator in page_source:
-                    log(f"Account NOT FOUND (Keyword: {indicator})", "WARN")
-                    return "NOT_FOUND"
                     
             # Check for Profile Card (Visual element)
             try:
@@ -895,7 +896,31 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
         try:
             page_source = self.driver.page_source
             
-            # First, check if there's a link with send_sms in href
+            # PRIORITY 1: Check for "We'll send you a code" page with Continue button
+            # This is the direct SMS confirmation page - just click Continue
+            try:
+                if "send you a code" in page_source.lower() or "we'll send" in page_source.lower():
+                    log("Detected SMS confirmation page - looking for Continue button...", "INFO")
+                    continue_selectors = [
+                        (By.XPATH, "//button[contains(text(), 'Continue')]"),
+                        (By.XPATH, "//div[@role='button' and contains(text(), 'Continue')]"),
+                        (By.XPATH, "//span[contains(text(), 'Continue')]"),
+                        (By.CSS_SELECTOR, "button[type='submit']"),
+                    ]
+                    for by, selector in continue_selectors:
+                        try:
+                            btn = self.driver.find_element(by, selector)
+                            if btn and btn.is_displayed():
+                                btn.click()
+                                log("Clicked Continue on SMS confirmation page!", "OK")
+                                time.sleep(1)
+                                return True
+                        except:
+                            continue
+            except:
+                pass
+
+            # PRIORITY 2: First, check if there's a link with send_sms in href
             try:
                 sms_link = self.driver.find_element(By.XPATH, "//a[contains(@href, 'send_sms')]")
                 if sms_link:
