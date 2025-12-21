@@ -237,10 +237,10 @@ class FacebookOTPBrowser:
         log("Setting up Chrome browser...")
         
         # Mobile Viewport & User Agent (Android)
-        # Desktop User Agent
-        desktop_ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        # iPad User Agent
+        ipad_ua = "Mozilla/5.0 (iPad; CPU OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Safari/605.1.15"
         
-        def get_configured_options(use_mobile_emulation=False):
+        def get_configured_options(use_mobile_emulation=True):
             """Helper to generate fresh options"""
             options = Options()
             
@@ -250,16 +250,15 @@ class FacebookOTPBrowser:
             # Anti-detection options
             options.add_argument("--disable-blink-features=AutomationControlled")
             
-            # UA & Window Size - Laptop dimensions
-            options.add_argument(f"user-agent={desktop_ua}")
-            options.add_argument("--window-size=1366,768")  # Common laptop resolution
+            # UA & Window Size - iPad dimensions
+            options.add_argument(f"user-agent={ipad_ua}")
+            options.add_argument("--window-size=820,1180")  # iPad Air resolution
             
-            # Disable mobile emulation for desktop version
+            # Enable iPad emulation
             if use_mobile_emulation:
-                # Keep for compatibility but default is now False
                 mobile_emulation = {
-                    "deviceMetrics": { "width": 1366, "height": 768, "pixelRatio": 1.0 },
-                    "userAgent": desktop_ua
+                    "deviceMetrics": { "width": 820, "height": 1180, "pixelRatio": 2.0 },
+                    "userAgent": ipad_ua
                 }
                 options.add_experimental_option("mobileEmulation", mobile_emulation)
 
