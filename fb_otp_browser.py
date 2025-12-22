@@ -930,7 +930,7 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
             log(f"Error checking account: {e}", "ERROR")
             return "ERROR"
     
-    def step5_select_sms_option(self):
+    def step5_select_sms_option(self, phone=""):
         """Step 5: Select SMS recovery option (NOT email)"""
         log("Step 5: Looking for SMS option (avoiding email)...")
         self._handle_cookie_consent()
@@ -958,8 +958,7 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
                 # Now check if SMS option is available
                 if "sms" not in page_source and "text message" not in page_source:
                     log("NO SMS OPTION AVAILABLE - Only email/notification/password options", "ERROR")
-                    self._take_step_snapshot("NO_SMS_OPTION", "")
-                    return False
+                    return False, "NO_SMS_OPTION_AVAILABLE"
             
             # PRIORITY 1: Check for "We'll send you a code" page with Continue button
             # This is the direct SMS confirmation page - just click Continue
@@ -979,7 +978,7 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
                                 btn.click()
                                 log("Clicked Continue on SMS confirmation page!", "OK")
                                 time.sleep(1)
-                                return True
+                                return True, "SMS_SELECTED_DIRECTLY"
                         except:
                             continue
             except:
@@ -992,7 +991,7 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
                     sms_link.click()
                     log("Clicked SMS link!", "OK")
                     time.sleep(0.5)
-                    return True
+                    return True, "SMS_LINK_CLICKED"
             except:
                 pass
             
@@ -1015,10 +1014,19 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
                         is_email = any(kw in parent_text for kw in email_keywords)
                         
                         if is_sms and not is_email:
+                            # Check if it matches our phone (last 2 digits) if possible
+                            if phone and len(phone) >= 2:
+                                last_digits = phone[-2:]
+                                if last_digits in parent_text:
+                                    log(f"Matched phone digits {last_digits} in SMS option", "OK")
+                                    radio.click()
+                                    time.sleep(0.3)
+                                    return True, "SMS_RADIO_SELECTED_MATCHED"
+                            
                             radio.click()
                             log("Selected SMS radio button (Text Match)!", "OK")
                             time.sleep(0.3)
-                            return True
+                            return True, "SMS_RADIO_SELECTED"
                     except:
                         continue
                         
@@ -1028,7 +1036,7 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
                     if sms_radios:
                         sms_radios[0].click()
                         log("Selected SMS radio button (ID Match)!", "OK")
-                        return True
+                        return True, "SMS_ID_MATCH"
                 except:
                     pass
                     
@@ -1046,7 +1054,7 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
                         elem.click()
                         log("Clicked SMS option!", "OK")
                         time.sleep(0.3)
-                        return True
+                        return True, "SMS_TEXT_MATCH"
             except:
                 pass
             
@@ -1060,7 +1068,7 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
                             elem.click()
                             log("Clicked phone number option!", "OK")
                             time.sleep(0.3)
-                            return True
+                            return True, "PHONE_NUMBER_MATCH"
                         except:
                             continue
             except:
@@ -1082,16 +1090,15 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
                 sms_available = "sms" in page_source or "text message" in page_source
                 if not sms_available:
                     log("NO SMS OPTION AVAILABLE - Only email/notification/password options found", "ERROR")
-                    self._take_step_snapshot("NO_SMS_OPTION", "")
-                    return False
+                    return False, "NO_SMS_OPTION_VISIBLE"
             
             log("Could not find specific SMS option - may need manual selection", "WARN")
-            return False
+            return False, "SMS_OPTION_NOT_FOUND"
             
         except Exception as e:
             log(f"Error searching number: {e}", "ERROR")
-            self._save_failure_snapshot("step2_search_error")
-            return False
+            self._save_failure_snapshot("step5_error")
+            return False, f"STEP5_ERROR: {str(e)}"
     
     def step6_send_code(self):
         """Step 6: Click send code / continue button"""
@@ -1306,7 +1313,8 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
                 # ========== STEP 5 & 6: Recover ==========
                 # Step 5: Select SMS
                 self._take_step_snapshot("5_BeforeSMS", phone)
-                if self.step5_select_sms_option():
+                success, reason = self.step5_select_sms_option(phone)
+                if success:
                     self._take_step_snapshot("5_AfterSMS", phone)
                     
                     # Step 6: Send Code
@@ -1333,9 +1341,13 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
                         result["message"] = "Failed to click send code"
                         self._take_step_snapshot("6_SendFail", phone)
                 else:
-                    result["message"] = "Failed to select SMS"
-                    self._take_step_snapshot("5_SMSFail", phone)
-                    log(f"Could not find SMS option for Account {accounts_processed + 1}", "WARN")
+                    result["message"] = reason
+                    # Use the specific failure reason for the snapshot name to show in Telegram
+                    # 'reason' will be like NO_SMS_OPTION_VISIBLE or SMS_OPTION_NOT_FOUND
+                    # We sanitize it for filename
+                    safe_reason = "".join(c for c in reason if c.isalnum() or c in ('_', '-'))[:25]
+                    self._take_step_snapshot(f"FAILED_{safe_reason}", phone)
+                    log(f"Could not find SMS option for Account {accounts_processed + 1} ({reason})", "WARN")
 
                 accounts_processed += 1
                 
