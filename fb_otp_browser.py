@@ -581,7 +581,8 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
             self.random_sleep(8, 12)  # Longer wait to appear more human
             
             # Handle Cookie Consent (European/International IPs)
-            self._handle_cookie_consent()
+            # Handle Cookie Consent (Removed by user request)
+            # self._handle_cookie_consent()
             
             # Simulate human browsing behavior
             self.simulate_human_behavior()
@@ -592,52 +593,13 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
             self._save_failure_snapshot("step1_open_page")
             return False
 
-    def _handle_cookie_consent(self):
-        """Click 'Decline optional cookies' - Clean Version"""
-        log("Checking for cookie consent...", "INFO")
-        try:
-            # Wait for the button to appear (timeout 2 seconds - OPTIMIZED)
-            wait = WebDriverWait(self.driver, 2)
-            
-            button = None
-            try:
-                # First try Mobile Cookie Button (Decline)
-                button = wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, 'button[data-cookiebanner="accept_only_essential_button"]')))
-                log("Found Mobile cookie button (Decline).", "INFO")
-            except:
-                pass
-
-            if not button:
-                try:
-                    # Then try Arabic
-                    button = wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, 'div[aria-label="رفض ملفات تعريف الارتباط الاختيارية"]')))
-                    log("Found Arabic cookie button.", "INFO")
-                except:
-                    pass
-            
-            if not button:
-                try:
-                    # Then try English
-                    button = wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, 'div[aria-label="Decline optional cookies"]')))
-                    log("Found English cookie button.", "INFO")
-                except:
-                    pass
-
-            if button:
-                time.sleep(3)  # Wait before clicking to simulate human behavior
-                button.click()
-                log("Clicked 'Decline optional cookies' successfully.", "SUCCESS")
-                time.sleep(2)
-            else:
-                log("No cookie popup found.", "INFO")
-            
-        except Exception as e:
-            log(f"Cookie handler error: {e}", "WARN")
+    # Cookie consent handler removed by user request
+    # def _handle_cookie_consent(self): ...
     
     def step2_enter_phone(self, phone):
         """Step 2: Enter phone number in search field"""
         log(f"Step 2: Entering phone number: {phone}...")
-        self._handle_cookie_consent()  # Ensure cookies don't block input
+        # self._handle_cookie_consent()
         
         try:
             # Find the email/phone input field - try multiple times
@@ -686,7 +648,7 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
     def step3_click_search(self):
         """Step 3: Click the search button"""
         log("Step 3: Clicking search button...")
-        self._handle_cookie_consent() 
+        # self._handle_cookie_consent() 
         
         try:
             # Try different button selectors
@@ -765,7 +727,7 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
     def step4_check_account_found(self):
         """Step 4: Check if account was found"""
         log("Step 4: Checking if account exists...")
-        self._handle_cookie_consent()
+        # self._handle_cookie_consent()
         
         # Wait for page to load properly
         time.sleep(2)
@@ -912,7 +874,7 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
     def step5_select_sms_option(self, phone=""):
         """Step 5: Select SMS recovery option (NOT email)"""
         log("Step 5: Looking for SMS option (avoiding email)...")
-        self._handle_cookie_consent()
+        # self._handle_cookie_consent()
         
         time.sleep(0.5)
         
@@ -1592,6 +1554,7 @@ def main():
         browser = FacebookOTPBrowser(headless=headless, proxy_manager=proxy_manager)
         result = browser.send_otp(phone)
         print(f"\nResult: {result}")
+        print(f"FINAL_STATUS_MSG: {result.get('message', 'Unknown Error')}")
 
 
 if __name__ == '__main__':
