@@ -8,9 +8,7 @@ on:
         required: true
         type: string
 
-env:
-  TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
-  TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+
 
 jobs:
   prepare-matrix:
@@ -48,6 +46,9 @@ jobs:
   process-numbers:
     needs: prepare-matrix
     runs-on: ubuntu-latest
+    env:
+      TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
     strategy:
       fail-fast: false
       matrix:
@@ -73,12 +74,6 @@ jobs:
           # Verify connection
           warp-cli status || true
       
-      - name: Verify WARP Connection
-        run: |
-          WARP_IP=$(curl -s ifconfig.me)
-          MSG="✅ WARP Active! New IP: $WARP_IP"
-          curl -s -X POST "https://api.telegram.org/bot$TELEGRAM_TOKEN/sendMessage" -d "chat_id=$TELEGRAM_CHAT_ID" --data-urlencode "text=$MSG"
-      
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
@@ -88,7 +83,7 @@ jobs:
         uses: browser-actions/setup-chrome@latest
       
       - name: Install dependencies
-        run: pip install selenium webdriver-manager requests selenium-wire undetected-chromedriver
+        run: pip install selenium webdriver-manager requests selenium-wire
       
       - name: Get IP
         id: ip
@@ -99,12 +94,12 @@ jobs:
           echo "${{ matrix.numbers }}" > numbers.txt
           echo "Processing Batch #${{ matrix.id }}"
           cat numbers.txt
-      
-      - name: Send batch start notification
+
+      - name: Verify WARP Connection and Send Start Message
         run: |
+          WARP_IP=$(curl -s ifconfig.me)
           COUNT=$(wc -l < numbers.txt | tr -d ' ')
-          IP="${{ steps.ip.outputs.ip }}"
-          MSG="🚀 Batch #${{ matrix.id }} Started ($COUNT numbers) | IP: $IP"
+          MSG="🚀 Batch #${{ matrix.id }} Started ($COUNT numbers) | WARP IP: $WARP_IP"
           curl -s -X POST "https://api.telegram.org/bot$TELEGRAM_TOKEN/sendMessage" -d "chat_id=$TELEGRAM_CHAT_ID" --data-urlencode "text=$MSG"
       
       - name: Run OTP Script (Batch)
