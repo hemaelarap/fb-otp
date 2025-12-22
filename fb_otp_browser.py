@@ -68,12 +68,8 @@ except ImportError:
     print("[WARNING] webdriver-manager not installed. Run: pip install webdriver-manager")
     ChromeDriverManager = None
 
-try:
-    import undetected_chromedriver as uc
-    UNDETECTED_AVAILABLE = True
-except ImportError:
-    print("[WARNING] undetected-chromedriver not installed. Run: pip install undetected-chromedriver")
-    UNDETECTED_AVAILABLE = False
+# Undetected Chromedriver removed by user request
+UNDETECTED_AVAILABLE = False
 
 # Colors
 class C:
@@ -305,52 +301,35 @@ class FacebookOTPBrowser:
 
         # Driver Initialization Logic
         try:
-            # OPTION 1: Undetected Chrome (Best Stealth)
-            if UNDETECTED_AVAILABLE:
-                log("Attempting to use undetected-chromedriver...", "INFO")
+            log("Starting Standard Chrome...", "INFO")
+            
+            # Standard Chrome Options
+            safe_options = get_configured_options(use_mobile_emulation=True)
+            
+            if ChromeDriverManager:
                 try:
-                    # Try with FULL mobile emulation first
-                    self.driver = uc.Chrome(
-                        options=get_configured_options(use_mobile_emulation=True),
-                        headless=self.headless,
-                        use_subprocess=False,
-                        version_main=None
-                    )
-                    log("Undetected Chrome browser ready!", "OK")
+                    driver_path = ChromeDriverManager().install()
+                    if "THIRD_PARTY_NOTICES" in driver_path:
+                            import os
+                            base_dir = os.path.dirname(driver_path)
+                            real_path = os.path.join(base_dir, "chromedriver")
+                            if os.path.exists(real_path):
+                                driver_path = real_path
+                                os.chmod(driver_path, 0o755)
+                    
+                    service = Service(driver_path)
+                    self.driver = webdriver.Chrome(service=service, options=safe_options)
+                    log("Standard Chrome (via DriverManager) ready!", "OK")
                 except Exception as e:
-                    log(f"Undetected-Chromedriver failed: {e}", "WARN")
-                    self.driver = None # Trigger fallback
-
-            # OPTION 2: Standard Chrome (Fallback)
+                        log(f"Standard Chrome (Manager) failed: {e}", "WARN")
+            
+            # Fallback: Direct Standard Chrome
             if not self.driver:
-                log("Falling back to Standard Chrome (Safe Mode)...", "INFO")
-                # Generate SAFE options (Keep mobile emulation for standard chrome as it's stable there)
-                safe_options = get_configured_options(use_mobile_emulation=True)
-                
-                if ChromeDriverManager:
-                    try:
-                        driver_path = ChromeDriverManager().install()
-                        if "THIRD_PARTY_NOTICES" in driver_path:
-                             import os
-                             base_dir = os.path.dirname(driver_path)
-                             real_path = os.path.join(base_dir, "chromedriver")
-                             if os.path.exists(real_path):
-                                 driver_path = real_path
-                                 os.chmod(driver_path, 0o755)
-                        
-                        service = Service(driver_path)
-                        self.driver = webdriver.Chrome(service=service, options=safe_options)
-                        log("Standard Chrome (via DriverManager) ready!", "OK")
-                    except Exception as e:
-                         log(f"Standard Chrome (Manager) failed: {e}", "WARN")
-                
-                # OPTION 3: Direct Standard Chrome
-                if not self.driver:
-                    try:
-                        self.driver = webdriver.Chrome(options=safe_options)
-                        log("Standard Chrome (direct) ready!", "OK")
-                    except Exception as e:
-                        log(f"Standard Chrome (Direct) failed: {e}", "ERROR")
+                try:
+                    self.driver = webdriver.Chrome(options=safe_options)
+                    log("Standard Chrome (direct) ready!", "OK")
+                except Exception as e:
+                    log(f"Standard Chrome (Direct) failed: {e}", "ERROR")
 
             # --- ADVANCED FINGERPRINT SPOOFING (CDP) ---
             if self.driver:
@@ -962,8 +941,11 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
             
             # PRIORITY 1: Check for "We'll send you a code" page with Continue button
             # This is the direct SMS confirmation page - just click Continue
+            # CRITICAL: We must NOT do this if we are on the "Choose a way" selection page
+            is_selection_page = "choose a way to log in" in page_source
+            
             try:
-                if "send you a code" in page_source or "we'll send" in page_source:
+                if not is_selection_page and ("send you a code" in page_source or "we'll send" in page_source):
                     log("Detected SMS confirmation page - looking for Continue button...", "INFO")
                     continue_selectors = [
                         (By.XPATH, "//button[contains(text(), 'Continue')]"),
@@ -1148,13 +1130,24 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
             
             if not clicked:
                 log("Could not click any button!", "WARN")
-                return False
+                return False, "BUTTON_CLICK_FAILED"
             
             # Wait and verify code was sent
-            time.sleep(2)
+            # INCREASED WAIT: Mobile pages load slowly
+            time.sleep(5)
             page_source = self.driver.page_source.lower()
             current_url = self.driver.current_url.lower()
             
+            # FAIL CHECK: Did we send an email instead of SMS?
+            if "sent a code to your email" in page_source or "via email" in page_source:
+                log("FAILED: Code sent to EMAIL, not SMS!", "ERROR")
+                return False, "FAILED_EMAIL_SENT"
+
+            # FAIL CHECK: Captcha / Security Check
+            if "enter these letters" in page_source or "security check" in page_source or "play audio" in page_source or "recaptcha" in page_source:
+                log("FAILED: Captcha/Security Check detected!", "ERROR")
+                return False, "FAILED_CAPTCHA_REQUIRED"
+
             success_indicators = [
                 "enter code",
                 "we sent",
@@ -1168,19 +1161,19 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
             for indicator in success_indicators:
                 if indicator in page_source:
                     log("*** OTP CODE SENT SUCCESSFULLY! ***", "SUCCESS")
-                    return True
+                    return True, "OTP_SENT_SUCCESS"
             
             if "code" in current_url:
                 log("*** OTP CODE SENT! ***", "SUCCESS")
-                return True
+                return True, "OTP_SENT_URL_MATCH"
             
             # If we clicked but can't confirm, still return True but warn
             log("Button clicked - Code may have been sent - check phone!", "OK")
-            return True
+            return True, "OTP_POSSIBLY_SENT"
             
         except Exception as e:
             log(f"Error sending code: {e}", "ERROR")
-            return False
+            return False, f"STEP6_ERROR: {str(e)}"
     
     def send_otp(self, phone):
         """Main function: Send OTP to phone - 3-STEP FLOW"""
@@ -1319,7 +1312,10 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
                     
                     # Step 6: Send Code
                     self._take_step_snapshot("6_BeforeSend", phone)
-                    if self.step6_send_code():
+                    # Step 6: Send Code
+                    self._take_step_snapshot("6_BeforeSend", phone)
+                    success_6, reason_6 = self.step6_send_code()
+                    if success_6:
                         result["status"] = "OTP_SENT"
                         result["message"] = f"OTP Sent to account #{accounts_processed + 1}"
                         result["otp_url"] = self.driver.current_url  # Capture final URL for OTP entry
@@ -1335,11 +1331,14 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
                         except Exception as e:
                             log(f"Snapshot error: {e}", "WARN")
                         
-                        log(f"OTP Sent for Account {accounts_processed + 1}", "SUCCESS")
+                        log(f"OTP Sent for Account {accounts_processed + 1} ({reason_6})", "SUCCESS")
                         log(f"OTP URL: {result['otp_url']}", "INFO")
                     else:
-                        result["message"] = "Failed to click send code"
-                        self._take_step_snapshot("6_SendFail", phone)
+                        result["message"] = reason_6
+                        # Sanitize reason for filename
+                        safe_reason_6 = "".join(c for c in reason_6 if c.isalnum() or c in ('_', '-'))[:25]
+                        self._take_step_snapshot(f"FAILED_{safe_reason_6}", phone)
+                        log(f"Failed to send code: {reason_6}", "ERROR")
                 else:
                     result["message"] = reason
                     # Use the specific failure reason for the snapshot name to show in Telegram
