@@ -577,8 +577,9 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
         """Step 1: Open Facebook, handle cookies, and navigate to recovery"""
         log("Step 1: Opening Facebook Recovery Page (Mobile)...")
         try:
+            self._take_step_snapshot("STEP1_START")
             self.driver.get('https://m.facebook.com/login/identify')
-            self.random_sleep(8, 12)  # Longer wait to appear more human
+            self.random_sleep(2, 4)  # Reduced wait time for speed (was 8-12)
             
             # Handle Cookie Consent (European/International IPs)
             # Handle Cookie Consent (Removed by user request)
@@ -587,6 +588,7 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
             # Simulate human browsing behavior
             self.simulate_human_behavior()
             
+            self._take_step_snapshot("STEP1_END")
             return True
         except Exception as e:
             log(f"Error opening page: {e}", "ERROR")
@@ -639,6 +641,7 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
             time.sleep(0.1)
             
             log("Phone number entered!", "OK")
+            self._take_step_snapshot("STEP2_END", phone)
             return True
             
         except Exception as e:
@@ -700,6 +703,7 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
                 input_field.send_keys(Keys.ENTER)
                 log("Pressed Enter to search", "OK")
                 time.sleep(0.5)
+                self._take_step_snapshot("STEP3_END", "")
                 return True
             except:
                 pass
@@ -749,6 +753,7 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
             # SECOND: Check URL for recovery (most reliable)
             if "recover" in current_url or "reset" in current_url:
                 log("Account FOUND (URL check)!", "OK")
+                self._take_step_snapshot("STEP4_FOUND_URL", "")
                 return "FOUND"
             
             # THIRD: Check for Login page with "Try Another Way" button
@@ -877,6 +882,7 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
         # self._handle_cookie_consent()
         
         time.sleep(0.5)
+        self._take_step_snapshot("STEP5_START", phone)
         
         try:
             page_source = self.driver.page_source.lower()
@@ -935,6 +941,7 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
                     sms_link.click()
                     log("Clicked SMS link!", "OK")
                     time.sleep(0.5)
+                    self._take_step_snapshot("STEP5_SMS_LINK", phone)
                     return True, "SMS_LINK_CLICKED"
             except:
                 pass
@@ -1046,7 +1053,8 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
     
     def step6_send_code(self):
         """Step 6: Click send code / continue button"""
-        log("Step 6: Sending OTP code...")
+        log("Step 6: Clicking 'Continue' / 'Send Code'...")
+        self._take_step_snapshot("STEP6_START")
         
         try:
             # PRIORITY: Try Continue button first with JS fallback
