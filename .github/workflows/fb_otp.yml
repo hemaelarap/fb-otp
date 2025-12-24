@@ -82,6 +82,11 @@ jobs:
       - name: Install Chrome
         uses: browser-actions/setup-chrome@latest
       
+      - name: WARP
+        uses: fscarmen/warp-on-actions@v1.2
+        with:
+          stack: dual
+      
       - name: Install dependencies
         run: pip install selenium webdriver-manager requests selenium-wire
       
