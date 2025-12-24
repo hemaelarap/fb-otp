@@ -96,7 +96,7 @@ jobs:
       - name: Connect to ProtonVPN (WireGuard)
         env:
           # Note: WireGuard config contains keys, User/Pass not strictly needed for interface but keeping secrets clean
-          PROTON_CONFIG: ${{ secrets.PROTON_CONFIG_BASE64 }}
+          PROTON_CONFIG: "W0ludGVyZmFjZV0KIyBCb3VuY2luZyA9IDAKUHJpdmF0ZUtleSA9IGlHSXFrOEExVHZUVkRiUEJ4eWZFcmZpZFU3T2JBa3FCS2JHN2hJc1pYbWM9CkFkZHJlc3MgPSAxMC4yLjAuMi8zMgpETlMgPSAxMC4yLjAuMQoKW1BlZXJdCiMgQ0EtRlJFRSMxNApQdWJsaWNLZXkgPSA5SVJhRTJ3cWNBVmtOOWNlVU1GWmE3cm9FMWlESVZKRWs1UzR3TUtzTzMwPQpBbGxvd2VkSVBzID0gMC4wLjAuMC8wLCA6Oi8wCkVuZHBvaW50ID0gMTQ5LjIyLjk1LjE5Mzo1MTgyMA=="
         run: |
           # 1. Decode Config (fail if missing)
           if [ -z "$PROTON_CONFIG" ]; then
