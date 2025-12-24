@@ -1167,9 +1167,13 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
             current_url = self.driver.current_url.lower()
             
             # FAIL CHECK: Did we send an email instead of SMS?
-            if "sent a code to your email" in page_source or "via email" in page_source:
-                log("FAILED: Code sent to EMAIL, not SMS!", "ERROR")
-                return False, "FAILED_EMAIL_SENT"
+            # Refined check: Only fail if "email" is explicitly mentioned in a "sent" context
+            # AND "sms" is NOT mentioned (to avoid mixed messages)
+            if ("sent a code to your email" in page_source or "via email" in page_source) and "sms" not in page_source:
+                 # Double check elements for email pattern
+                 if self.driver.find_elements(By.XPATH, "//*[contains(text(), '@')]"):
+                     log("FAILED: Code sent to EMAIL, not SMS!", "ERROR")
+                     return False, "FAILED_EMAIL_SENT"
 
             # SUCCESS CHECK FIRST: Robust Element Detection
             try:
