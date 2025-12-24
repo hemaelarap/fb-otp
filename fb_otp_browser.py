@@ -1004,12 +1004,23 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
                         parent = radio.find_element(By.XPATH, "./..")
                         parent_text = parent.text.lower()
                         
-                        # Check if it's SMS related and NOT email and NOT WhatsApp
-                        is_sms = any(kw in parent_text for kw in sms_keywords)
-                        is_email = any(kw in parent_text for kw in email_keywords)
-                        is_whatsapp = 'whatsapp' in parent_text or 'واتساب' in parent_text
+                        # EXPLICIT EXCLUSIONS - Never select these options
+                        skip_keywords = [
+                            'facebook notification', 'notification', 
+                            'password', 'كلمة المرور', 'كلمة السر',
+                            'whatsapp', 'واتساب',
+                            'email', 'بريد', 'gmail', 'mail'
+                        ]
+                        should_skip = any(kw in parent_text for kw in skip_keywords)
                         
-                        if is_sms and not is_email and not is_whatsapp:
+                        if should_skip:
+                            log(f"Skipping option: {parent_text[:50]}...", "INFO")
+                            continue
+                        
+                        # ONLY select if it explicitly has SMS keywords
+                        is_sms = 'sms' in parent_text or 'text message' in parent_text or 'رسالة نصية' in parent_text
+                        
+                        if is_sms:
                             # Check if it matches our phone (last 2 digits) if possible
                             if phone and len(phone) >= 2:
                                 last_digits = phone[-2:]
