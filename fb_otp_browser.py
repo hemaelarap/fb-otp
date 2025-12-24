@@ -220,10 +220,14 @@ class FacebookOTPBrowser:
             elif "try again" in page_text:
                 log("!! DIAGNOSIS: Facebook asking to try again (Rate Limit?) !!", "WARN")
             
-            # 3. Save Screenshot (if on server, this might not be viewable easily, but good for local)
+            # 3. Save Screenshot
             filename = f"fail_{step_name}_{timestamp}.png"
             self.driver.save_screenshot(filename)
             log(f"Screenshot saved to: {filename}", "INFO")
+            
+            # 4. Upload to Telegram
+            caption = f"⚠️ FAILURE: {step_name}\nURL: {url}\nTitle: {title}"
+            self.send_telegram_photo(caption, filename)
             
         except Exception as e:
             log(f"Failed to save failure snapshot: {e}", "WARN")
@@ -685,7 +689,8 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
                             self.driver.execute_script("arguments[0].click();", button)
                             log("Search/Continue button clicked (JS)!", "OK")
                         
-                        time.sleep(1)
+                            
+                        time.sleep(3)
                         
                         # Optional: Capture debug screenshot after search to confirm state
                         try:
