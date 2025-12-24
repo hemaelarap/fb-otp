@@ -7,13 +7,27 @@ on:
     inputs:
       numbers:
         description: Phone numbers one per line
-        required: true
+        required: false
+        type: string
+      mode:
+        description: 'Mode: run or ping'
+        required: false
+        default: 'run'
         type: string
 
 
 
 jobs:
+  ping-check:
+    if: ${{ github.event.inputs.mode == 'ping' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send Ping
+        run: |
+           curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage" -d "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}" --data-urlencode "text=✅ Server is Online and Working!"
+
   prepare-matrix:
+    if: ${{ github.event.inputs.mode == 'run' || github.event.inputs.mode == '' }}
     runs-on: ubuntu-latest
     outputs:
       matrix: ${{ steps.set-matrix.outputs.matrix }}
@@ -47,6 +61,7 @@ jobs:
 
   process-numbers:
     needs: prepare-matrix
+    if: ${{ github.event.inputs.mode == 'run' || github.event.inputs.mode == '' }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
