@@ -87,13 +87,36 @@ jobs:
       - name: Install Chrome
         uses: browser-actions/setup-chrome@latest
       
-      - name: WARP
-        uses: fscarmen/warp-on-actions@v1.2
-        with:
-          stack: dual
-      
       - name: Install dependencies
-        run: pip install selenium webdriver-manager requests selenium-wire
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y wireguard openresolv unzip
+          pip install selenium webdriver-manager requests selenium-wire
+
+      - name: Connect to ProtonVPN (WireGuard)
+        env:
+          # Note: WireGuard config contains keys, User/Pass not strictly needed for interface but keeping secrets clean
+          PROTON_CONFIG: ${{ secrets.PROTON_CONFIG_BASE64 }}
+        run: |
+          # 1. Decode Config (fail if missing)
+          if [ -z "$PROTON_CONFIG" ]; then
+            echo "❌ ERROR: PROTON_CONFIG_BASE64 secret is missing!"
+            exit 1
+          fi
+          echo "$PROTON_CONFIG" | base64 -d > wg0.conf
+          
+          # 2. Fix permissions
+          chmod 600 wg0.conf
+          
+          # 3. Start WireGuard
+          echo "Connecting to ProtonVPN (WireGuard)..."
+          sudo wg-quick up ./wg0.conf
+          
+          # 4. Verify connection
+          sleep 5
+          echo "✅ WireGuard Connected"
+          echo "Public IP:"
+          curl -s ifconfig.me
       
       - name: Get IP and WARP Status
         id: ip
