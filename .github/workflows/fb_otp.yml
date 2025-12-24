@@ -91,7 +91,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y wireguard resolvconf unzip
-          pip install selenium webdriver-manager requests selenium-wire
+          pip install selenium webdriver-manager requests
 
       - name: Connect to ProtonVPN (WireGuard)
         env:
