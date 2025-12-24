@@ -104,15 +104,19 @@ jobs:
             exit 1
           fi
           echo "$PROTON_CONFIG" | base64 -d > wg0.conf
+          # Remove DNS line to avoid resolvconf hang
+          sed -i '/^DNS/d' wg0.conf
           
           # 2. Fix permissions
           chmod 600 wg0.conf
           
           # 3. Start WireGuard
-          echo "Connecting to ProtonVPN (WireGuard)..."
+          echo "Starting WireGuard..."
           sudo wg-quick up ./wg0.conf
           
           # 4. Verify connection
+          echo "WireGuard Status:"
+          sudo wg show
           sleep 5
           echo "✅ WireGuard Connected"
           echo "Public IP:"
