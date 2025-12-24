@@ -799,31 +799,47 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
                 try:
                     # Find all clickable account rows
                     account_selectors = [
-                        # Target buttons that contain an IMAGE (Avatar) - Best way to distinguish account from Back button
-                        (By.XPATH, "//div[@role='button'][.//img]"), 
-                        (By.XPATH, "//a[@role='button'][.//img]"),
-                        
-                        # Target buttons after the header text
+                        # PRIORITY 1: Only buttons/links that appear AFTER the "Choose your account" header
+                        # This safely excludes top navigation/back buttons
                         (By.XPATH, "//*[contains(text(), 'Choose your account')]/following::div[@role='button']"),
+                        (By.XPATH, "//*[contains(text(), 'Choose your account')]/following::a[@role='button']"),
+                        (By.XPATH, "//*[contains(text(), 'Choose your account')]/following::div[contains(@class, 'x1i10hfl')]"),
                         
-                        # Target specific structure (Text + Arrow)
-                        (By.XPATH, "//div[contains(@class, 'x1i10hfl') and .//img]"),
-                        
-                        # Fallback: List items
+                        # PRIORITY 2: List Items (often used for results)
                         (By.TAG_NAME, "li"),
+                        (By.CSS_SELECTOR, "li div[role='button']"),
+                        
+                        # Fallback (Risky, but better than nothing if above fail)
+                        (By.XPATH, "//div[@role='button'][.//img]"), 
                     ]
                     
                     for by, selector in account_selectors:
                         try:
-                            accounts = self.driver.find_elements(by, selector)
-                            if accounts and len(accounts) > 0:
-                                # Click the first account (usually matches phone number)
-                                accounts[0].click()
-                                log(f"Clicked first account option", "OK")
-                                self._take_step_snapshot("MULTI_ACC_SELECTED", "")
-                                time.sleep(2)
-                                return "FOUND"  # Proceed to next step
-                        except:
+                            elements = self.driver.find_elements(by, selector)
+                            if elements:
+                                log(f"DEBUG: Found {len(elements)} candidates with {selector}", "INFO")
+                                for i, elem in enumerate(elements):
+                                    try:
+                                        txt = elem.text.replace("\n", " | ")
+                                        tag = elem.tag_name
+                                        classes = elem.get_attribute("class")
+                                        log(f"   [{i}] Tag: {tag}, Text: {txt}, Class: {classes}", "INFO")
+                                        # Skip if it looks like a back button (empty text or just arrow)
+                                        if not txt.strip() and "role" in classes: 
+                                             log(f"   [{i}] Skipping empty text button (likely back/nav)", "INFO")
+                                             continue
+                                        
+                                        # Force click the first valid one
+                                        elem.click()
+                                        log(f"Clicked candidate #{i}", "OK")
+                                        self._take_step_snapshot("MULTI_ACC_SELECTED", "")
+                                        time.sleep(2)
+                                        return "FOUND"
+                                    except Exception as inner_e:
+                                        log(f"   [{i}] failed to inspect/click: {inner_e}", "WARN")
+                        
+                        except Exception as e:
+                            log(f"Selector {selector} failed: {e}", "WARN")
                             continue
                 except Exception as e:
                     log(f"Error clicking account: {e}", "WARN")
@@ -1126,6 +1142,19 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
                 log("FAILED: Code sent to EMAIL, not SMS!", "ERROR")
                 return False, "FAILED_EMAIL_SENT"
 
+            # SUCCESS CHECK FIRST: "Confirm your account" or Input field
+            if "confirm your account" in page_source or "enter code" in page_source:
+                 log("*** OTP CODE SENT SUCCESSFULLY! (Confirm Screen Detected) ***", "SUCCESS")
+                 return True, "OTP_SENT_SUCCESS"
+
+            # Check for input field for code
+            try:
+                code_input = self.driver.find_elements(By.CSS_SELECTOR, "input[name='n']")
+                if code_input:
+                     log("*** OTP CODE SENT! (Input Field Found) ***", "SUCCESS")
+                     return True, "OTP_SENT_INPUT_FOUND"
+            except: pass
+
             # FAIL CHECK: Captcha / Security Check
             if "enter these letters" in page_source or "security check" in page_source or "play audio" in page_source or "recaptcha" in page_source:
                 log("FAILED: Captcha/Security Check detected!", "ERROR")
@@ -1139,6 +1168,7 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
                 "enter the code",
                 "أدخل الرمز",
                 "تم الإرسال",
+                "confirm your account",
             ]
             
             for indicator in success_indicators:
