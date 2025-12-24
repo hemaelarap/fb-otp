@@ -842,8 +842,6 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
                                         # Skip if it looks like a back button (empty text or just arrow)
                                         if not txt.strip() and "role" in classes: 
                                              log(f"   [{i}] Skipping empty text button (likely back/nav)", "INFO")
-                                             continue
-                                        
                                         # Force click the first valid one
                                         elem.click()
                                         log(f"Clicked candidate #{i}", "OK")
