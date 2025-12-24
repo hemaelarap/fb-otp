@@ -346,6 +346,12 @@ class FacebookOTPBrowser:
                         """
                     })
                     log("Anti-fingerprint scripts injected.", "OK")
+                    
+                    # TIMEOUTS: Critical to prevent 30m+ hangs
+                    self.driver.set_page_load_timeout(30)
+                    self.driver.set_script_timeout(30)
+                    log("Driver timeouts set to 30s.", "OK")
+                    
                 except Exception as e:
                     log(f"Warning: Failed to inject anti-fingerprint scripts: {e}", "WARN")
 
