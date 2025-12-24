@@ -24,7 +24,7 @@ jobs:
     steps:
       - name: Send Ping
         run: |
-           curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage" -d "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}" --data-urlencode "text=✅ Server is Online and Working!"
+           curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage" -d "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}" --data-urlencode "text=✅ Server (${{ github.repository }}) is Online and Working!"
 
   prepare-matrix:
     if: ${{ github.event.inputs.mode == 'run' || github.event.inputs.mode == '' }}
