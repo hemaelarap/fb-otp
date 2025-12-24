@@ -50,17 +50,7 @@ except ImportError:
     print("[ERROR] Selenium not installed! Run: pip install selenium webdriver-manager")
     sys.exit(1)
 
-# Try to import seleniumwire for authenticated proxy support
-try:
-    from seleniumwire import webdriver as wire_webdriver
-    SELENIUMWIRE_AVAILABLE = True
-except ImportError:
-    SELENIUMWIRE_AVAILABLE = False
-    SELENIUMWIRE_AVAILABLE = True
-except ImportError:
-    SELENIUMWIRE_AVAILABLE = False
-    # Only warn if proxy is actually used later, or just suppress noisy warning
-    pass
+
 
 try:
     from webdriver_manager.chrome import ChromeDriverManager
@@ -609,31 +599,34 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
         
         try:
             # Find the email/phone input field - try multiple times
+            # Optimized Selectors (Mobile Priority)
             input_selectors = [
-                (By.ID, "identify_email"),
-                (By.NAME, "email"),
                 (By.CSS_SELECTOR, "input[name='email']"),
+                (By.CSS_SELECTOR, "input[type='tel']"),
+                (By.NAME, "email"),
                 (By.CSS_SELECTOR, "#contactpoint_step_input"),
-                (By.CSS_SELECTOR, "input.inputtext._9o1w"),
-                (By.CSS_SELECTOR, "input[type='text']"),
                 (By.XPATH, "//input[@placeholder]"),
-                (By.CSS_SELECTOR, "input"),
             ]
             
             input_field = None
-            for attempt in range(3):  # Try 3 times
-                for by, selector in input_selectors:
-                    try:
-                        input_field = WebDriverWait(self.driver, 8).until(
-                            EC.presence_of_element_located((by, selector))
-                        )
-                        if input_field and input_field.is_displayed():
-                            break
-                    except:
-                        continue
-                if input_field:
-                    break
-                time.sleep(0.5)
+            # Fast check first
+            for by, selector in input_selectors:
+                try:
+                    # Quick check (2s max)
+                    input_field = WebDriverWait(self.driver, 2).until(
+                        EC.presence_of_element_located((by, selector))
+                    )
+                    if input_field and input_field.is_displayed():
+                        break
+                except:
+                    continue
+            
+            if not input_field:
+                 # Last resort retry
+                 time.sleep(1)
+                 try:
+                     input_field = self.driver.find_element(By.CSS_SELECTOR, "input[name='email']")
+                 except: pass
             
             if not input_field:
                 log("Could not find input field", "ERROR")
@@ -1142,22 +1135,45 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
                 log("FAILED: Code sent to EMAIL, not SMS!", "ERROR")
                 return False, "FAILED_EMAIL_SENT"
 
-            # SUCCESS CHECK FIRST: "Confirm your account" or Input field
-            if "confirm your account" in page_source or "enter code" in page_source:
-                 log("*** OTP CODE SENT SUCCESSFULLY! (Confirm Screen Detected) ***", "SUCCESS")
-                 return True, "OTP_SENT_SUCCESS"
-
-            # Check for input field for code
+            # SUCCESS CHECK FIRST: Robust Element Detection
             try:
-                code_input = self.driver.find_elements(By.CSS_SELECTOR, "input[name='n']")
-                if code_input:
-                     log("*** OTP CODE SENT! (Input Field Found) ***", "SUCCESS")
-                     return True, "OTP_SENT_INPUT_FOUND"
-            except: pass
+                # 1. Check for Header "Confirm your account"
+                confirm_headers = self.driver.find_elements(By.XPATH, "//*[contains(text(), 'Confirm your account')]")
+                if confirm_headers:
+                     log("*** OTP CODE SENT! (Found 'Confirm your account' header) ***", "SUCCESS")
+                     return True, "OTP_SENT_HEADER_FOUND"
+
+                # 2. Check for "Enter code" input field (by placeholder or structure)
+                otp_inputs = self.driver.find_elements(By.CSS_SELECTOR, "input[placeholder*='code'], input[placeholder*='Code'], input[name='n'], input[type='number']")
+                if otp_inputs:
+                     # Verify it's not a search/phone input
+                     for inp in otp_inputs:
+                         if "phone" not in inp.get_attribute("placeholder").lower() and "email" not in inp.get_attribute("placeholder").lower():
+                             log("*** OTP CODE SENT! (Found OTP input field) ***", "SUCCESS")
+                             return True, "OTP_SENT_INPUT_FOUND"
+            except Exception as e:
+                log(f"Error in element check: {e}", "WARN")
 
             # FAIL CHECK: Captcha / Security Check
-            if "enter these letters" in page_source or "security check" in page_source or "play audio" in page_source or "recaptcha" in page_source:
-                log("FAILED: Captcha/Security Check detected!", "ERROR")
+            # Only fail if we are SURE it's a captcha (visual check preferred)
+            captcha_keywords = ["enter these letters", "security check", "recaptcha"]
+            found_captcha = False
+            for kw in captcha_keywords:
+                if kw in page_source:
+                    found_captcha = True
+                    break
+            
+            if found_captcha:
+                # Double check: Is it actually visible?
+                log("Potential Captcha detected in source - verifying visibility...", "WARN")
+                
+                # Dump snippet to log for debugging (since we are on Heroku)
+                snippet_start = max(0, page_source.find(kw) - 100)
+                snippet_end = min(len(page_source), snippet_start + 300)
+                snippet = page_source[snippet_start:snippet_end]
+                log(f"CAPTCHA SOURCE SNIPPET: ...{snippet}...", "WARN")
+                
+                log("FAILED: Captcha/Security Check confirmed!", "ERROR")
                 return False, "FAILED_CAPTCHA_REQUIRED"
 
             success_indicators = [
@@ -1325,7 +1341,6 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
                     
                     # Step 6: Send Code
                     self._take_step_snapshot("6_BeforeSend", phone)
-                    # Step 6: Send Code
                     self._take_step_snapshot("6_BeforeSend", phone)
                     success_6, reason_6 = self.step6_send_code()
                     if success_6:
