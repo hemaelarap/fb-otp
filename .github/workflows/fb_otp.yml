@@ -90,7 +90,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y wireguard openresolv unzip
+          sudo apt-get install -y wireguard resolvconf unzip
           pip install selenium webdriver-manager requests selenium-wire
 
       - name: Connect to ProtonVPN (WireGuard)
@@ -142,7 +142,6 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           BATCH_ID: ${{ matrix.id }}
           IP: ${{ steps.ip.outputs.ip }}
-          WARP_STATUS: ${{ steps.ip.outputs.warp_status }}
         run: |
           python3 -c "
           import os, requests
@@ -151,12 +150,11 @@ jobs:
               chat_id = os.environ['TELEGRAM_CHAT_ID']
               batch_id = os.environ['BATCH_ID']
               ip = os.environ.get('IP', 'Unknown')
-              warp = os.environ.get('WARP_STATUS', 'Unknown')
               
               with open('numbers.txt', 'r') as f:
                   count = len([l for l in f if l.strip()])
               
-              msg = f'🚀 Batch #{batch_id} Started ({count} numbers)\n🌍 IP: {ip}\n🛡️ WARP: {warp}'
+              msg = f'🚀 Batch #{batch_id} Started ({count} numbers)\n🌍 IP: {ip}\n🛡️ VPN: ✅ Proton (WireGuard)'
               requests.post(f'https://api.telegram.org/bot{token}/sendMessage', data={'chat_id': chat_id, 'text': msg})
               print('Start message sent successfully')
           except Exception as e:
