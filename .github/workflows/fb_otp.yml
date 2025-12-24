@@ -177,7 +177,28 @@ jobs:
             sleep 1
           done < numbers.txt
       
-      - name: Send batch completion
+      - name: Send Completion Message
         if: always()
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          BATCH_ID: ${{ matrix.id }}
+          REPO: ${{ github.repository }}
         run: |
-          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage" -d "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}" --data-urlencode "text=🏁 Batch #${{ matrix.id }} Finished"
+          python3 -c "
+          import os, requests
+          try:
+              token = os.environ['TELEGRAM_TOKEN']
+              chat_id = os.environ['TELEGRAM_CHAT_ID']
+              batch_id = os.environ['BATCH_ID']
+              repo_name = os.environ['REPO']
+              
+              with open('numbers.txt', 'r') as f:
+                  count = len([l for l in f if l.strip()])
+              
+              msg = f'✅ Server {repo_name} | Batch #{batch_id} Completed! ({count} numbers)'
+              requests.post(f'https://api.telegram.org/bot{token}/sendMessage', data={'chat_id': chat_id, 'text': msg})
+              print('Completion message sent successfully')
+          except Exception as e:
+              print(f'Failed to send completion message: {e}')
+          "
