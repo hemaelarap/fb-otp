@@ -592,7 +592,7 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
         """Step 1: Open Facebook, handle cookies, and navigate to recovery"""
         log("Step 1: Opening Facebook Recovery Page (Mobile)...")
         try:
-            self._take_step_snapshot("STEP1_START")
+            # self._take_step_snapshot("STEP1_START")
             self.driver.get('https://m.facebook.com/login/identify')
             self.random_sleep(2, 4)  # Reduced wait time for speed (was 8-12)
             
@@ -603,7 +603,7 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
             # Simulate human browsing behavior
             self.simulate_human_behavior()
             
-            self._take_step_snapshot("STEP1_END")
+            # self._take_step_snapshot("STEP1_END")
             return True
         except Exception as e:
             log(f"Error opening page: {e}", "ERROR")
@@ -659,7 +659,7 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
             time.sleep(0.1)
             
             log("Phone number entered!", "OK")
-            self._take_step_snapshot("STEP2_END", phone)
+            # self._take_step_snapshot("STEP2_END", phone)
             return True
             
         except Exception as e:
@@ -709,8 +709,9 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
                         # Optional: Capture debug screenshot after search to confirm state
                         try:
                              if not self.headless or (self.headless and not self.driver.current_url): 
-                                 self.driver.save_screenshot("debug_after_search.png")
-                                 self.send_telegram_photo("After Search Click", "debug_after_search.png")
+                                 # self.driver.save_screenshot("debug_after_search.png")
+                                 # self.send_telegram_photo("After Search Click", "debug_after_search.png")
+                                 pass
                         except: pass
                         return True
                 except:
@@ -722,7 +723,7 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
                 input_field.send_keys(Keys.ENTER)
                 log("Pressed Enter to search", "OK")
                 time.sleep(0.5)
-                self._take_step_snapshot("STEP3_END", "")
+                # self._take_step_snapshot("STEP3_END", "")
                 return True
             except:
                 pass
@@ -772,7 +773,7 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
             # SECOND: Check URL for recovery (most reliable)
             if "recover" in current_url or "reset" in current_url:
                 log("Account FOUND (URL check)!", "OK")
-                self._take_step_snapshot("STEP4_FOUND_URL", "")
+                # self._take_step_snapshot("STEP4_FOUND_URL", "")
                 return "FOUND"
             
             # THIRD: Check for Login page with "Try Another Way" button
@@ -925,7 +926,7 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
         # self._handle_cookie_consent()
         
         time.sleep(0.5)
-        self._take_step_snapshot("STEP5_START", phone)
+        # self._take_step_snapshot("STEP5_START", phone)
         
         try:
             page_source = self.driver.page_source.lower()
@@ -984,7 +985,7 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
                     sms_link.click()
                     log("Clicked SMS link!", "OK")
                     time.sleep(0.5)
-                    self._take_step_snapshot("STEP5_SMS_LINK", phone)
+                    # self._take_step_snapshot("STEP5_SMS_LINK", phone)
                     return True, "SMS_LINK_CLICKED"
             except:
                 pass
@@ -1100,7 +1101,7 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
     def step6_send_code(self):
         """Step 6: Click send code / continue button"""
         log("Step 6: Clicking 'Continue' / 'Send Code'...")
-        self._take_step_snapshot("STEP6_START")
+        # self._take_step_snapshot("STEP6_START")
         
         try:
             # PRIORITY: Try Continue button first with JS fallback
@@ -1262,32 +1263,32 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
                 # ========== STEP 1: Open identify page and search ==========
                 if not self.step1_open_recovery_page():
                     result["message"] = "Failed to open recovery page"
-                    self._take_step_snapshot("1_OpenFail", phone)
+                    # self._take_step_snapshot("1_OpenFail", phone)
                     break # Critical failure
-                self._take_step_snapshot("1_Opened", phone)
+                # self._take_step_snapshot("1_Opened", phone)
                 
                 # Enter phone
-                self._take_step_snapshot("2_BeforePhone", phone)
+                # self._take_step_snapshot("2_BeforePhone", phone)
                 if not self.step2_enter_phone(phone):
                     result["message"] = "Failed to enter phone"
-                    self._take_step_snapshot("2_PhoneFail", phone)
+                    # self._take_step_snapshot("2_PhoneFail", phone)
                     break
-                self._take_step_snapshot("2_AfterPhone", phone)
+                # self._take_step_snapshot("2_AfterPhone", phone)
                 
                 # Search
-                self._take_step_snapshot("3_BeforeSearch", phone)
+                # self._take_step_snapshot("3_BeforeSearch", phone)
                 if not self.step3_click_search():
                     result["message"] = "Failed to click search"
-                    self._take_step_snapshot("3_SearchFail", phone)
+                    # self._take_step_snapshot("3_SearchFail", phone)
                     break
                 # self._take_step_snapshot("3_AfterSearch", phone) # step3 has its own snapshot now
                     
                 # Check Result
-                self._take_step_snapshot("4_BeforeChekResult", phone)
+                # self._take_step_snapshot("4_BeforeChekResult", phone)
                 status = self.step4_check_account_found()
                 
                 # Check 2: Try a quick snapshot of the result immediately
-                self._take_step_snapshot(f"4_ResultState_{status}", phone)
+                # self._take_step_snapshot(f"4_ResultState_{status}", phone)
                 
                 if status == "NOT_FOUND":
                     log("Account NOT FOUND (Final)", "WARN")
@@ -1358,14 +1359,14 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
 
                 # ========== STEP 5 & 6: Recover ==========
                 # Step 5: Select SMS
-                self._take_step_snapshot("5_BeforeSMS", phone)
+                # self._take_step_snapshot("5_BeforeSMS", phone)
                 success, reason = self.step5_select_sms_option(phone)
                 if success:
-                    self._take_step_snapshot("5_AfterSMS", phone)
+                    # self._take_step_snapshot("5_AfterSMS", phone)
                     
                     # Step 6: Send Code
-                    self._take_step_snapshot("6_BeforeSend", phone)
-                    self._take_step_snapshot("6_BeforeSend", phone)
+                    # self._take_step_snapshot("6_BeforeSend", phone)
+                    # self._take_step_snapshot("6_BeforeSend", phone)
                     success_6, reason_6 = self.step6_send_code()
                     if success_6:
                         result["status"] = "OTP_SENT"
@@ -1389,7 +1390,7 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
                         result["message"] = reason_6
                         # Sanitize reason for filename
                         safe_reason_6 = "".join(c for c in reason_6 if c.isalnum() or c in ('_', '-'))[:25]
-                        self._take_step_snapshot(f"FAILED_{safe_reason_6}", phone)
+                        # self._take_step_snapshot(f"FAILED_{safe_reason_6}", phone)
                         log(f"Failed to send code: {reason_6}", "ERROR")
                 else:
                     result["message"] = reason
@@ -1397,7 +1398,7 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
                     # 'reason' will be like NO_SMS_OPTION_VISIBLE or SMS_OPTION_NOT_FOUND
                     # We sanitize it for filename
                     safe_reason = "".join(c for c in reason if c.isalnum() or c in ('_', '-'))[:25]
-                    self._take_step_snapshot(f"FAILED_{safe_reason}", phone)
+                    # self._take_step_snapshot(f"FAILED_{safe_reason}", phone)
                     log(f"Could not find SMS option for Account {accounts_processed + 1} ({reason})", "WARN")
 
                 accounts_processed += 1
