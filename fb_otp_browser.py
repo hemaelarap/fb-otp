@@ -799,10 +799,16 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
                 try:
                     # Find all clickable account rows
                     account_selectors = [
-                        (By.CSS_SELECTOR, "div[role='button']"),
+                        # Specific matches for the list items shown in screenshot
+                        (By.XPATH, "//div[contains(text(), 'Choose your account')]/following::div[@role='button']"), 
+                        (By.XPATH, "//div[contains(text(), 'Choose your account')]/following::div[contains(@class, 'x1i10hfl')]"),
+                        (By.CSS_SELECTOR, "div[role='button']"),  # Generic button
+                        (By.CSS_SELECTOR, "div[data-sigil='touchable']"), # m.facebook touchable
+                        (By.CSS_SELECTOR, "li"), # List items (often used in these lists)
+                        (By.TAG_NAME, "li"),
                         (By.CSS_SELECTOR, "a[role='button']"),
-                        (By.XPATH, "//div[contains(@class, 'x1i10hfl')]"),  # Common FB clickable div
-                        (By.XPATH, "//div[contains(text(), '+')]"),  # Phone number display
+                        (By.XPATH, "//div[contains(@class, 'x1i10hfl')]"), 
+                        (By.XPATH, "//div[contains(text(), '+')]"),
                     ]
                     
                     for by, selector in account_selectors:
