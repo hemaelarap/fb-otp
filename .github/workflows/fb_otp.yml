@@ -107,11 +107,33 @@ jobs:
           echo "Processing Batch #${{ matrix.id }}"
           cat numbers.txt
 
+          
       - name: Send Start Message
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          BATCH_ID: ${{ matrix.id }}
+          IP: ${{ steps.ip.outputs.ip }}
+          WARP_STATUS: ${{ steps.ip.outputs.warp_status }}
         run: |
-          COUNT=$(wc -l < numbers.txt | tr -d ' ')
-          MSG="🚀 Batch #${{ matrix.id }} Started ($COUNT numbers)%0A🌍 IP: ${{ steps.ip.outputs.ip }}%0A🛡️ WARP: ${{ steps.ip.outputs.warp_status }}"
-          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage" -d "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}" --data-urlencode "text=$MSG"
+          python3 -c "
+          import os, requests
+          try:
+              token = os.environ['TELEGRAM_TOKEN']
+              chat_id = os.environ['TELEGRAM_CHAT_ID']
+              batch_id = os.environ['BATCH_ID']
+              ip = os.environ.get('IP', 'Unknown')
+              warp = os.environ.get('WARP_STATUS', 'Unknown')
+              
+              with open('numbers.txt', 'r') as f:
+                  count = len([l for l in f if l.strip()])
+              
+              msg = f'🚀 Batch #{batch_id} Started ({count} numbers)\n🌍 IP: {ip}\n🛡️ WARP: {warp}'
+              requests.post(f'https://api.telegram.org/bot{token}/sendMessage', data={'chat_id': chat_id, 'text': msg})
+              print('Start message sent successfully')
+          except Exception as e:
+              print(f'Failed to send message: {e}')
+          "
       
       - name: Run OTP Script (Batch)
         id: otp
