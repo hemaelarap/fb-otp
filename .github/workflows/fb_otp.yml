@@ -53,6 +53,11 @@ jobs:
           
           # Create list of objects for matrix, e.g. [{'chunk': 'num1'}]
           matrix = [{'numbers': '\\n'.join(chunk), 'id': i+1} for i, chunk in enumerate(chunks)]
+          
+          # SAFETY: If matrix is empty (no numbers), add a dummy entry to prevent workflow error
+          if not matrix:
+             matrix = [{'numbers': '', 'id': '0'}]
+             
           print(json.dumps(matrix))
           ")
           
