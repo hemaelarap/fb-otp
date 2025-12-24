@@ -57,21 +57,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up Cloudflare WARP
-        run: |
-          # Install Cloudflare WARP
-          curl -fsSL https://pkg.cloudflareclient.com/pubkey.gpg | sudo gpg --yes --dearmor --output /usr/share/keyrings/cloudflare-warp-archive-keyring.gpg
-          echo "deb [signed-by=/usr/share/keyrings/cloudflare-warp-archive-keyring.gpg] https://pkg.cloudflareclient.com/ $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/cloudflare-client.list
-          sudo apt-get update
-          sudo apt-get install -y cloudflare-warp
-          
-          # Register and connect (accept ToS automatically)
-          warp-cli registration new --accept-tos || true
-          warp-cli connect --accept-tos || true
-          sleep 10
-          
-          # Verify connection
-          warp-cli status || true
+
       
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -94,11 +80,10 @@ jobs:
           echo "Processing Batch #${{ matrix.id }}"
           cat numbers.txt
 
-      - name: Verify WARP Connection and Send Start Message
+      - name: Send Start Message
         run: |
-          WARP_IP=$(curl -s ifconfig.me)
           COUNT=$(wc -l < numbers.txt | tr -d ' ')
-          MSG="🚀 Batch #${{ matrix.id }} Started ($COUNT numbers) | WARP IP: $WARP_IP"
+          MSG="🚀 Batch #${{ matrix.id }} Started ($COUNT numbers)"
           curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage" -d "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}" --data-urlencode "text=$MSG"
       
       - name: Run OTP Script (Batch)
