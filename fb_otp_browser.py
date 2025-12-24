@@ -799,16 +799,18 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
                 try:
                     # Find all clickable account rows
                     account_selectors = [
-                        # Specific matches for the list items shown in screenshot
-                        (By.XPATH, "//div[contains(text(), 'Choose your account')]/following::div[@role='button']"), 
-                        (By.XPATH, "//div[contains(text(), 'Choose your account')]/following::div[contains(@class, 'x1i10hfl')]"),
-                        (By.CSS_SELECTOR, "div[role='button']"),  # Generic button
-                        (By.CSS_SELECTOR, "div[data-sigil='touchable']"), # m.facebook touchable
-                        (By.CSS_SELECTOR, "li"), # List items (often used in these lists)
+                        # Target buttons that contain an IMAGE (Avatar) - Best way to distinguish account from Back button
+                        (By.XPATH, "//div[@role='button'][.//img]"), 
+                        (By.XPATH, "//a[@role='button'][.//img]"),
+                        
+                        # Target buttons after the header text
+                        (By.XPATH, "//*[contains(text(), 'Choose your account')]/following::div[@role='button']"),
+                        
+                        # Target specific structure (Text + Arrow)
+                        (By.XPATH, "//div[contains(@class, 'x1i10hfl') and .//img]"),
+                        
+                        # Fallback: List items
                         (By.TAG_NAME, "li"),
-                        (By.CSS_SELECTOR, "a[role='button']"),
-                        (By.XPATH, "//div[contains(@class, 'x1i10hfl')]"), 
-                        (By.XPATH, "//div[contains(text(), '+')]"),
                     ]
                     
                     for by, selector in account_selectors:
