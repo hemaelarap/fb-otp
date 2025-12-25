@@ -91,93 +91,62 @@ jobs:
           sudo apt-get install -y openvpn dialog python3-pip expect wget
           pip install selenium webdriver-manager requests
 
-      - name: Connect to VPN (VPNGate - Free Public VPN)
+      - name: Connect to VPN (ProtonVPN WireGuard)
         run: |
-          # VPNGate - Free Public VPN Relay Service
-          # No registration or credentials needed!
-          # API: http://www.vpngate.net/api/iphone/
+          # ProtonVPN WireGuard - Using local config files
+          echo "🔐 Setting up ProtonVPN WireGuard..."
           
-          echo "🌐 Setting up VPNGate VPN..."
-          sudo apt-get install -y openvpn
+          # Install WireGuard
+          sudo apt-get install -y wireguard
           
           # Configure DNS
           echo "nameserver 8.8.8.8" | sudo tee /etc/resolv.conf > /dev/null
           echo "nameserver 1.1.1.1" | sudo tee -a /etc/resolv.conf > /dev/null
           
-          # Fetch VPNGate server list
-          echo "📥 Fetching VPNGate server list..."
-          curl -s "http://www.vpngate.net/api/iphone/" > vpngate_servers.csv
+          # List available configs from repo
+          echo "📂 Available VPN configs:"
+          ls -la vpn/*.conf || true
           
-          # Parse and try multiple servers
-          CONNECTED=false
-          set +e
+          # Get all WireGuard configs and randomly select one
+          CONFIGS=(vpn/wg-*.conf)
+          TOTAL=${#CONFIGS[@]}
           
-          # Get top servers - EXCLUDE European countries
-          # Column 7 = country name. Exclude: Germany, France, UK, Netherlands, etc.
-          # Prefer: Japan, Korea, USA, Canada, etc.
-          CONFIGS=$(cat vpngate_servers.csv | grep -v "^\*" | tail -n +3 | \
-            grep -viE "Germany|France|United Kingdom|Netherlands|Spain|Italy|Poland|Sweden|Switzerland|Austria|Belgium|Norway|Finland" | \
-            head -15)
-          
-          SERVER_NUM=0
-          while IFS= read -r line; do
-            SERVER_NUM=$((SERVER_NUM + 1))
-            
-            # Extract server info
-            COUNTRY=$(echo "$line" | cut -d',' -f7)
-            IP=$(echo "$line" | cut -d',' -f2)
-            CONFIG_BASE64=$(echo "$line" | cut -d',' -f15)
-            
-            if [ -z "$CONFIG_BASE64" ] || [ "$CONFIG_BASE64" = "" ]; then
-              continue
-            fi
-            
-            echo "🔄 Trying server $SERVER_NUM: $COUNTRY ($IP)..."
-            
-            # Decode OpenVPN config
-            echo "$CONFIG_BASE64" | base64 -d > vpn-config.ovpn 2>/dev/null
-            
-            if [ ! -s vpn-config.ovpn ]; then
-              echo "  ❌ Failed to decode config"
-              continue
-            fi
-            
-            # Start OpenVPN
-            sudo openvpn --config vpn-config.ovpn --daemon --log /tmp/vpn.log
-            
-            # Wait for connection (max 30 seconds)
-            echo "  ⏳ Waiting for connection..."
-            for i in {1..15}; do
-              if ip addr show tun0 > /dev/null 2>&1; then
-                sleep 3
-                NEW_IP=$(curl -s --max-time 5 https://api.ipify.org || echo "unknown")
-                if [ "$NEW_IP" != "unknown" ]; then
-                  echo "  ✅ Connected! New IP: $NEW_IP (Country: $COUNTRY)"
-                  CONNECTED=true
-                  break 2
-                fi
-              fi
-              sleep 2
-            done
-            
-            # Failed, try next
-            echo "  ❌ Connection failed, trying next..."
-            sudo killall openvpn 2>/dev/null || true
-            rm vpn-config.ovpn 2>/dev/null || true
-            sleep 1
-            
-          done <<< "$CONFIGS"
-          
-          set -e
-          
-          if [ "$CONNECTED" = false ]; then
-            echo "❌ Could not connect to any VPNGate server."
-            echo "--- Last VPN Log ---"
-            cat /tmp/vpn.log 2>/dev/null || true
+          if [ $TOTAL -eq 0 ]; then
+            echo "❌ No WireGuard configs found in vpn/ folder!"
             exit 1
           fi
           
-          echo "🎉 VPN Connected Successfully!"
+          # Random selection
+          RANDOM_INDEX=$((RANDOM % TOTAL))
+          SELECTED_CONFIG="${CONFIGS[$RANDOM_INDEX]}"
+          
+          echo "🎲 Selected config ($((RANDOM_INDEX + 1))/$TOTAL): $SELECTED_CONFIG"
+          
+          # Copy to WireGuard folder
+          sudo cp "$SELECTED_CONFIG" /etc/wireguard/wg0.conf
+          sudo chmod 600 /etc/wireguard/wg0.conf
+          
+          # Show config info (hide private key)
+          echo "📄 Config details:"
+          grep -v "PrivateKey" /etc/wireguard/wg0.conf | head -10
+          
+          # Connect
+          echo "🔌 Connecting to VPN..."
+          sudo wg-quick up wg0
+          
+          # Wait and verify
+          sleep 5
+          
+          # Check connection
+          if ip addr show wg0 > /dev/null 2>&1; then
+            NEW_IP=$(curl -s --max-time 10 https://api.ipify.org || echo "unknown")
+            echo "✅ VPN Connected!"
+            echo "🌍 New IP: $NEW_IP"
+          else
+            echo "❌ VPN connection failed!"
+            sudo wg show || true
+            exit 1
+          fi
       
       - name: Get IP and WARP Status
         id: ip
