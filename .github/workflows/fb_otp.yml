@@ -99,7 +99,17 @@ jobs:
           # Initialize ProtonVPN (OpenVPN Direct)
           # We bypass the CLI tools (Community=422, Official=DBus/Keyring issues) and use OpenVPN directly.
           echo "Setting up OpenVPN..."
-          sudo apt-get install -y openvpn
+          sudo apt-get install -y openvpn resolvconf
+          
+          # Fix DNS: Add public DNS servers (Google, Cloudflare) to ensure hostname resolution
+          echo "Configuring DNS..."
+          echo "nameserver 8.8.8.8" | sudo tee /etc/resolv.conf > /dev/null
+          echo "nameserver 1.1.1.1" | sudo tee -a /etc/resolv.conf > /dev/null
+          echo "nameserver 8.8.4.4" | sudo tee -a /etc/resolv.conf > /dev/null
+          
+          # Test DNS resolution
+          echo "Testing DNS resolution..."
+          nslookup nl-109.protonvpn.com || echo "DNS test failed"
           
           # Create Auth File
           echo "${{ secrets.PROTON_USER }}" > vpn-auth.txt
