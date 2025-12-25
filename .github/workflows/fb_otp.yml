@@ -91,13 +91,12 @@ jobs:
           sudo apt-get install -y openvpn dialog python3-pip expect wget
           pip install selenium webdriver-manager requests
           
-          # Install ProtonVPN CLI (Official with Key Fix)
-          wget https://repo.protonvpn.com/debian/dists/stable/main/binary-all/protonvpn-stable-release_1.0.3-2_all.deb
-          sudo dpkg -i ./protonvpn-stable-release_1.0.3-2_all.deb
-          # Manually add verify key to fix "not signed" error
-          wget -qO - https://repo.protonvpn.com/debian/public_key.asc | sudo tee /etc/apt/trusted.gpg.d/protonvpn.asc
+          # Install ProtonVPN CLI (Manual Repo Setup)
+          sudo install -m 0755 -d /etc/apt/keyrings
+          wget -qO - https://repo.protonvpn.com/debian/public_key.asc | sudo tee /etc/apt/keyrings/protonvpn.asc
+          echo "deb [signed-by=/etc/apt/keyrings/protonvpn.asc] https://repo.protonvpn.com/debian stable main" | sudo tee /etc/apt/sources.list.d/protonvpn.list
           
-          sudo apt-get update || echo "Apt update failed but trying install anyway..."
+          sudo apt-get update
           sudo apt-get install -y protonvpn-cli
 
       - name: Connect to ProtonVPN (Random Server)
