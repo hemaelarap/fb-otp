@@ -90,78 +90,47 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y openvpn dialog python3-pip expect wget
           pip install selenium webdriver-manager requests
-          
-          # Install ProtonVPN CLI (Manual Repo Setup)
-          sudo install -m 0755 -d /etc/apt/keyrings
-          wget -qO - https://repo.protonvpn.com/debian/public_key.asc | sudo tee /etc/apt/keyrings/protonvpn.asc
-          echo "deb [signed-by=/etc/apt/keyrings/protonvpn.asc] https://repo.protonvpn.com/debian stable main" | sudo tee /etc/apt/sources.list.d/protonvpn.list
-          
-          sudo apt-get update
-          sudo apt-get install -y protonvpn-cli
 
       - name: Connect to ProtonVPN (Random Server)
         env:
           PROTON_USER: ${{ secrets.PROTON_USER }}
           PROTON_PASSWORD: ${{ secrets.PROTON_PASS }}
         run: |
-          # Initialize ProtonVPN CLI (Official)
+          # Initialize ProtonVPN CLI (Community)
           echo "Initializing ProtonVPN CLI..."
           
-          # Check binary name
-          if command -v protonvpn &> /dev/null; then
-              PVPN_CMD="protonvpn"
-          elif command -v protonvpn-cli &> /dev/null; then
-              PVPN_CMD="protonvpn-cli"
-          else
-              echo "Error: ProtonVPN binary not found!"
-              ls -l /usr/bin/proton* || true
-              exit 1
+          # Install dependencies
+          sudo apt-get install -y openvpn dialog python3-pip
+          
+          # Install Community CLI system-wide
+          # We use --break-system-packages because we are in a CI environment (runner) where it is safe/expected
+          sudo pip install protonvpn-cli --break-system-packages
+
+          # Fix: Create symlink so 'sudo protonvpn' works (it installs as protonvpn-cli)
+          # Find where it installed
+          CLI_PATH=$(which protonvpn-cli)
+          echo "Found CLI at: $CLI_PATH"
+          if [ -z "$CLI_PATH" ]; then
+            echo "Error: protonvpn-cli not found after install!"
+            exit 1
           fi
           
-          echo "Using binary: $PVPN_CMD"
+          # Symlink if not exists
+          if [ ! -f /usr/bin/protonvpn ]; then
+            sudo ln -s "$CLI_PATH" /usr/bin/protonvpn
+            echo "Symlink created: /usr/bin/protonvpn -> $CLI_PATH"
+          fi
           
-          # Install DBus and Keyring for ProtonVPN CLI
-          sudo apt-get install -y dbus-x11 gnome-keyring
-          
-          # OpenVPN Alternative Strategy
-          # 1. Create auth file
-          echo "${PROTON_USER}" > vpn-auth.txt
-          echo "${PROTON_PASSWORD}" >> vpn-auth.txt
-          chmod 600 vpn-auth.txt
-          
-          # OpenVPN/Proton Strategy 3: Community CLI (Pip)
-          # This version uses text-based config (~/.pvpn-cli) and no keyring daemon.
-          # Much better for headless CI.
-          
-          echo "Installing ProtonVPN-CLI (Community)..."
-          sudo apt-get install -y openvpn dialog python3-pip
-          # Install specific community version
-          pip install protonvpn-cli
+          # Verify
+          command -v protonvpn
           
           # Initialize (Non-interactive)
-          # The community CLI requires 'protonvpn init' which is interactive.
-          # We can feed inputs: username, password, tier (1=Free), protocol (1=UDP).
-          # Sequence: Username -> Password -> Tier? (Depends on version) -> Protocol
-          
+          # Community CLI asks: Username, Password, Plan (1=Free), Protocol (1=UDP)
           echo "Initializing ProtonVPN..."
-          # Input sequence: Username, Password, Plan (if asked, usually determines automatically or asks), Protocol (UDP=1)
-          # Validating flow: User, Pass, confirm?
-          # Actually 'protonvpn init' asks:
-          # 1. Username
-          # 2. Password
-          # 3. Confirm Plan? No, it validates.
-          # 4. Default Protocol (1=UDP, 2=TCP) hardcoded to 1 often? Or prompts.
-          # We'll use a robust expect script or simple pipe.
+          printf "$PROTON_USER\n$PROTON_PASSWORD\n1\n1\n" | sudo protonvpn init
           
-          printf "$PROTON_USER\n$PROTON_PASSWORD\n1\n" | sudo protonvpn init
-          
-          # Connect to Random US/JP Free server
+          # Connect to US Free server
           echo "Connecting..."
-          # 'protonvpn c -r' connects to random server (Free if account is free)
-          # We want US or JP explicitly if possible.
-          # protonvpn c --cc US
-          
-          # Handling root warning (if any) with 'yes' not usually needed for pip version but safe
           sudo protonvpn c --cc US
           
           # Verify connection
