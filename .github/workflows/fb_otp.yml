@@ -133,14 +133,30 @@ jobs:
           # Using specific, valid raw URLs.
           echo "Downloading OpenVPN Config..."
           
-          # Source 1: Official/Community Repo Raw Links (Valid .ovpn content)
-          # These are direct raw links to .ovpn files.
+          # Try to download config
+          # Redirecting stderr to stdout to catch curl errors if needed, but checking file content is safer
           curl -sL "https://raw.githubusercontent.com/hujun-open/protonvpn-cli-ng/master/protonvpn_cli/protocols/openvpn/udp/US-FREE%231.protonvpn.net.udp.ovpn" -o us-server.ovpn || \
           curl -sL "https://raw.githubusercontent.com/ProtonVPN/protonvpn-cli/master/protonvpn_cli/protocols/openvpn/udp/US-FREE%231.protonvpn.net.udp.ovpn" -o us-server.ovpn
           
-          # Verify download is not HTML
-          if [ ! -s us-server.ovpn ] || grep -q "<!DOCTYPE" us-server.ovpn || grep -q "<html" us-server.ovpn; then
-             echo "Download invalid (HTML detected). Creating Generic Config..."
+          # Inspect file
+          cat us-server.ovpn
+          
+          # Validation Logic
+          # Check for:
+          # 1. HTML content (<!DOCTYPE, <html)
+          # 2. "404: Not Found" (GitHub Raw often returns this string in body)
+          # 3. "404 Not Found"
+          # 4. Tiny file size (invalid config)
+          
+          IS_INVALID=false
+          if grep -q "<!DOCTYPE" us-server.ovpn; then IS_INVALID=true; fi
+          if grep -q "<html" us-server.ovpn; then IS_INVALID=true; fi
+          if grep -q "404: Not Found" us-server.ovpn; then IS_INVALID=true; fi
+          if grep -q "404 Not Found" us-server.ovpn; then IS_INVALID=true; fi
+          if [ ! -s us-server.ovpn ]; then IS_INVALID=true; fi
+          
+          if [ "$IS_INVALID" = true ]; then
+             echo "Download invalid or 404. Creating Generic Config..."
              # Fallback: Construct generic US free server config
              cat <<EOF > us-server.ovpn
           client
@@ -156,9 +172,11 @@ jobs:
           auth-user-pass vpn-auth.txt
           remote-cert-tls server
           EOF
+          else
+             echo "Download valid."
           fi
           
-          echo "Config content preview:"
+          echo "Final Config Preview:"
           head -n 5 us-server.ovpn
           
           # 3. Connect using OpenVPN
