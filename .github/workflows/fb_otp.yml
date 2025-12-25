@@ -106,16 +106,33 @@ jobs:
           # We use --break-system-packages because we are in a CI environment (runner) where it is safe/expected
           sudo pip install protonvpn-cli --break-system-packages
 
-          # Fix: Create symlink so 'sudo protonvpn' works (it installs as protonvpn-cli)
-          # Find where it installed
-          CLI_PATH=$(which protonvpn-cli)
+          # Fix: Create symlink so 'sudo protonvpn' works
+          # Local verification confirms 'pip install protonvpn-cli' creates 'protonvpn' binary
+          # But it might be in /usr/local/bin which sudo can't see.
+          
+          CLI_PATH=$(which protonvpn || which protonvpn-cli || echo "")
+          
+          # Fallback search if which failed
+          if [ -z "$CLI_PATH" ]; then
+             echo "'which' did not find protonvpn. Checking common paths..."
+             if [ -f "/usr/local/bin/protonvpn" ]; then
+                 CLI_PATH="/usr/local/bin/protonvpn"
+             elif [ -f "/usr/local/bin/protonvpn-cli" ]; then
+                 CLI_PATH="/usr/local/bin/protonvpn-cli"
+             elif [ -f "/usr/bin/protonvpn" ]; then
+                 CLI_PATH="/usr/bin/protonvpn"
+             fi
+          fi
+          
           echo "Found CLI at: $CLI_PATH"
           if [ -z "$CLI_PATH" ]; then
-            echo "Error: protonvpn-cli not found after install!"
+            echo "Error: protonvpn binary not found after install!"
+            echo "Listing /usr/local/bin:"
+            ls -la /usr/local/bin || true
             exit 1
           fi
           
-          # Symlink if not exists
+          # Symlink if not exists/needed
           if [ ! -f /usr/bin/protonvpn ]; then
             sudo ln -s "$CLI_PATH" /usr/bin/protonvpn
             echo "Symlink created: /usr/bin/protonvpn -> $CLI_PATH"
