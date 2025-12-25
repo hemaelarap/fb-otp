@@ -117,15 +117,11 @@ jobs:
             echo "Attempting to connect to $SERVER..."
             curl -sSL "$BASE_URL/$SERVER" -o vpn-config.ovpn
             
-            # Fix: OpenVPN 2.6 requires global options to be defined before <connection> blocks
-            # We prepend common ProtonVPN settings to the top of the file.
-            # The error "Option 'key-direction' ... ignored" implies these lines exist later in the file.
-            # We insert them at the top so they apply to all connection blocks.
-            sed -i '1i cipher AES-256-CBC\nauth SHA512\nremote-cert-tls server\ncomp-lzo no\nresolv-retry infinite\nverb 3' vpn-config.ovpn
-            
-            # Also if key-direction is used, we need to ensure it's global or per-connection. 
-            # Often key-direction 1 is needed for tls-auth. 
-            # We'll rely on the prepended options being sufficient defaults.
+            # Fix: OpenVPN 2.6 strict ordering.
+            # We use python to move the connection blocks to the END of the file, 
+            # so all global options (which are currently at the bottom) act as defaults.
+            python3 -c "import sys; lines=sys.stdin.readlines(); conns=[i for i,l in enumerate(lines) if '<connection>' in l or '</connection>' in l]; start=conns[0]; end=conns[-1]; print(''.join(lines[:start] + lines[end+1:] + lines[start:end+1]))" < vpn-config.ovpn > fixed.ovpn
+            mv fixed.ovpn vpn-config.ovpn
             
             # Start OpenVPN in background
             sudo openvpn --config vpn-config.ovpn --auth-user-pass vpn-auth.txt --daemon
