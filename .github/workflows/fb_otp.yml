@@ -120,6 +120,9 @@ jobs:
           
           echo "Using binary: $PVPN_CMD"
           
+          # Install DBus and Keyring for ProtonVPN CLI
+          sudo apt-get install -y dbus-x11 gnome-keyring
+          
           # Create Expect script for Login
           # Handles:
           # 1. Root warning ("Are you sure...")
@@ -131,7 +134,8 @@ jobs:
           set pass "$PROTON_PASSWORD"
           set cmd "$PVPN_CMD"
           
-          spawn sudo \$cmd login \$user
+          # Fix: Run inside dbus-launch
+          spawn dbus-launch sudo \$cmd login \$user
           
           expect {
             "Are you sure that you want to proceed" { send "y\r"; exp_continue }
@@ -146,6 +150,10 @@ jobs:
           EOF
           
           chmod +x login.exp
+          # Run script (dbus session handled inside script spawn or here)
+          # Note: dbus-launch starts a daemon, we might need to export vars if not used with spawn directly
+          # But since we use spawn dbus-launch [cmd], it should work for that command.
+          
           ./login.exp
           
           # Connect to random non-EU server (US or JP only)
@@ -155,7 +163,8 @@ jobs:
           echo "Selected country: $COUNTRY"
           
           # Use 'yes' to handle potential root warning during connect
-          yes | sudo $PVPN_CMD c --cc $COUNTRY
+          # Also needs dbus-launch for accessing the keyring
+          yes | dbus-launch sudo $PVPN_CMD c --cc $COUNTRY
           
           # Verify connection
           sleep 10
