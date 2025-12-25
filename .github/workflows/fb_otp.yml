@@ -115,16 +115,28 @@ jobs:
           CONNECTED=false
           for SERVER in "${SERVERS[@]}"; do
             echo "Attempting to connect to $SERVER..."
-            curl -sSL "$BASE_URL/$SERVER" -o vpn-config.ovpn
+            # Download with fail flag
+            if ! curl -sSL -f "$BASE_URL/$SERVER" -o vpn-config.ovpn; then
+               echo "Download failed for $SERVER"
+               continue
+            fi
+            
+            if [ ! -s vpn-config.ovpn ]; then
+               echo "Downloaded file is empty: $SERVER"
+               continue
+            fi
             
             # Fix: OpenVPN 2.6 strict ordering.
-            # We use python to move the connection blocks to the END of the file, 
-            # so all global options (which are currently at the bottom) act as defaults.
-            python3 -c "import sys; lines=sys.stdin.readlines(); conns=[i for i,l in enumerate(lines) if '<connection>' in l or '</connection>' in l]; start=conns[0]; end=conns[-1]; print(''.join(lines[:start] + lines[end+1:] + lines[start:end+1]))" < vpn-config.ovpn > fixed.ovpn
+            # Catch python errors to avoid workflow exit
+            if ! python3 -c "import sys; lines=sys.stdin.readlines(); conns=[i for i,l in enumerate(lines) if '<connection>' in l or '</connection>' in l]; start=conns[0]; end=conns[-1]; print(''.join(lines[:start] + lines[end+1:] + lines[start:end+1]))" < vpn-config.ovpn > fixed.ovpn; then
+               echo "Reorder script failed for $SERVER. File content:"
+               head -n 20 vpn-config.ovpn || true
+               continue
+            fi
             mv fixed.ovpn vpn-config.ovpn
             
-            # Start OpenVPN in background
-            sudo openvpn --config vpn-config.ovpn --auth-user-pass vpn-auth.txt --daemon
+            # Start OpenVPN in background with logging
+            sudo openvpn --config vpn-config.ovpn --auth-user-pass vpn-auth.txt --daemon --log vpn.log
             
             # Wait for connection
             echo "Waiting for VPN connection..."
