@@ -93,10 +93,16 @@ jobs:
           sudo apt-get install -y xvfb libnss3 libxss1 libasound2t64 libatk-bridge2.0-0 libgtk-3-0 || true
           pip install selenium webdriver-manager requests
           # Set Chrome path for Selenium (setup-chrome installs to specific path)
-          # Currently setup-chrome puts it in PATH, but we'll be explicit
-          echo "CHROME_BIN=$(which google-chrome)" >> $GITHUB_ENV
+          # Set Chrome path for Selenium (setup-chrome installs to specific path)
+          CHROME_PATH=$(find /opt/hostedtoolcache -name chrome -type f -executable | head -1)
+          if [ -z "$CHROME_PATH" ]; then
+             CHROME_PATH=$(which google-chrome || echo "")
+          fi
+          echo "Found Chrome at: $CHROME_PATH"
+          echo "CHROME_BIN=$CHROME_PATH" >> $GITHUB_ENV
+          
           # Verify Chrome installed
-          google-chrome --version || echo "Chrome not found!"
+          "$CHROME_PATH" --version || echo "Chrome version check failed"
 
       - name: Connect to VPN (ProtonVPN WireGuard)
         run: |
