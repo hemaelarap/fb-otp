@@ -141,10 +141,35 @@ jobs:
           # Verify
           command -v protonvpn
           
-          # Initialize (Non-interactive)
-          # Community CLI asks: Username, Password, Plan (1=Free), Protocol (1=UDP)
-          echo "Initializing ProtonVPN..."
-          printf "$PROTON_USER\n$PROTON_PASSWORD\n1\n1\n" | sudo protonvpn init
+          # Initialize (Interactive with Expect to handle TTY/Prompts)
+          # Community CLI asks: Username, Password, Confirm Password, Plan (1=Free), Protocol (1=UDP)
+          echo "Initializing ProtonVPN with Expect..."
+          
+          cat <<EOF > init_proton.exp
+          #!/usr/bin/expect
+          spawn sudo protonvpn init
+          set timeout 20
+          
+          expect -nocase "username:"
+          send -- "\$env(PROTON_USER)\r"
+          
+          expect -nocase "password:"
+          send -- "\$env(PROTON_PASSWORD)\r"
+          
+          expect -nocase "confirm*password:"
+          send -- "\$env(PROTON_PASSWORD)\r"
+          
+          expect -nocase "plan:"
+          send -- "1\r"
+          
+          expect -nocase "protocol:"
+          send -- "1\r"
+          
+          expect eof
+          EOF
+          
+          chmod +x init_proton.exp
+          ./init_proton.exp
           
           # Connect to US Free server
           echo "Connecting..."
