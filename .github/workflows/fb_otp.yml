@@ -115,10 +115,10 @@ jobs:
              exit 1
           fi
           
-          # Download generic free server configs (US)
+          # Download generic free server configs (NL - Netherlands)
           # Source: https://github.com/alefvanoon/Proton-Free-OVPN
-          # We try a few servers in case one is down.
-          SERVERS=("us-va-104.protonvpn.com.udp.ovpn" "us-va-105.protonvpn.com.udp.ovpn" "us-va-106.protonvpn.com.udp.ovpn")
+          # NL servers tend to be more accessible than US from GitHub runners
+          SERVERS=("nl-free-121.protonvpn.com.udp.ovpn" "nl-free-122.protonvpn.com.udp.ovpn" "nl-free-123.protonvpn.com.udp.ovpn")
           BASE_URL="https://raw.githubusercontent.com/alefvanoon/Proton-Free-OVPN/master"
           
           CONNECTED=false
@@ -144,6 +144,9 @@ jobs:
                continue
             fi
             mv fixed.ovpn vpn-config.ovpn
+            
+            # Fix: Convert uppercase hostnames to lowercase for DNS resolution
+            sed -i 's/PROTONVPN\.COM/protonvpn.com/g' vpn-config.ovpn
             
             # Quick foreground test to capture immediate errors (timeout after 5s)
             echo "Testing OpenVPN config..."
