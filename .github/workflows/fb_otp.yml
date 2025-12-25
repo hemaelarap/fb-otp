@@ -88,10 +88,14 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y openvpn dialog python3-pip expect
+          sudo apt-get install -y openvpn dialog python3-pip expect wget
           pip install selenium webdriver-manager requests
-          # Install ProtonVPN CLI
-          pip install protonvpn-cli
+          
+          # Install ProtonVPN CLI (Official)
+          wget https://repo.protonvpn.com/debian/dists/stable/main/binary-all/protonvpn-stable-release_1.0.3-2_all.deb
+          sudo dpkg -i ./protonvpn-stable-release_1.0.3-2_all.deb
+          sudo apt-get update
+          sudo apt-get install -y protonvpn-cli
 
       - name: Connect to ProtonVPN (Random Server)
         env:
