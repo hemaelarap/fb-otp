@@ -106,6 +106,15 @@ jobs:
           echo "${{ secrets.PROTON_PASS }}" >> vpn-auth.txt
           chmod 600 vpn-auth.txt
           
+          # Validate credentials exist
+          USER_LEN=$(wc -c < vpn-auth.txt | tr -d ' ')
+          echo "Auth file size: $USER_LEN bytes"
+          if [ "$USER_LEN" -lt 10 ]; then
+             echo "ERROR: Credentials appear to be empty or too short!"
+             echo "Please set PROTON_USER and PROTON_PASS secrets in GitHub."
+             exit 1
+          fi
+          
           # Download generic free server configs (US)
           # Source: https://github.com/alefvanoon/Proton-Free-OVPN
           # We try a few servers in case one is down.
@@ -136,8 +145,12 @@ jobs:
             fi
             mv fixed.ovpn vpn-config.ovpn
             
+            # Quick foreground test to capture immediate errors (timeout after 5s)
+            echo "Testing OpenVPN config..."
+            timeout 5 sudo openvpn --config vpn-config.ovpn --auth-user-pass vpn-auth.txt 2>&1 | head -20 || true
+            
             # Start OpenVPN in background with logging
-            sudo openvpn --config vpn-config.ovpn --auth-user-pass vpn-auth.txt --daemon --log vpn.log
+            sudo openvpn --config vpn-config.ovpn --auth-user-pass vpn-auth.txt --daemon --log /tmp/vpn.log
             
             # Wait for connection
             echo "Waiting for VPN connection..."
@@ -158,10 +171,10 @@ jobs:
             
             echo "Connection failed or timed out. Killing OpenVPN..."
             echo "--- VPN Log ---"
-            cat vpn.log 2>/dev/null || echo "No log file found"
+            cat /tmp/vpn.log 2>/dev/null || echo "No log file found"
             echo "--- End VPN Log ---"
             sudo killall openvpn || true
-            rm vpn-config.ovpn vpn.log 2>/dev/null || true
+            rm vpn-config.ovpn /tmp/vpn.log 2>/dev/null || true
             sleep 2
           done
           set -e  # Re-enable errexit
