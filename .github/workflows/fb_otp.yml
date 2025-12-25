@@ -162,8 +162,11 @@ jobs:
           expect -nocase "plan:"
           send -- "1\r"
           
-          expect -nocase "protocol:"
+          expect -nocase "preferred protocol"
           send -- "1\r"
+          
+          expect -nocase "correct?"
+          send -- "y\r"
           
           expect eof
           EOF
