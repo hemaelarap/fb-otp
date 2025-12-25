@@ -89,7 +89,12 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y openvpn dialog python3-pip expect wget
+          # Chrome dependencies for headless mode
+          sudo apt-get install -y xvfb libgconf-2-4 libnss3 libxss1 libasound2t64 libatk-bridge2.0-0 libgtk-3-0
           pip install selenium webdriver-manager requests
+          # Verify Chrome installed
+          which google-chrome || which chromium-browser || echo "Chrome not found!"
+          google-chrome --version || chromium-browser --version || echo "Chrome version check failed"
 
       - name: Connect to VPN (ProtonVPN WireGuard)
         run: |
