@@ -82,19 +82,17 @@ jobs:
         with:
           python-version: "3.10"
       
-      - name: Install Chrome
-        uses: browser-actions/setup-chrome@latest
-      
       - name: Install dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y openvpn dialog python3-pip expect wget
-          # Chrome dependencies for headless mode (Ubuntu 24.04 compatible)
-          sudo apt-get install -y xvfb libnss3 libxss1 libasound2t64 libatk-bridge2.0-0 libgtk-3-0 || true
+          # Install Chromium browser (simpler than Chrome for CI)
+          sudo apt-get install -y chromium-browser xvfb libnss3 libxss1 libasound2t64 || true
           pip install selenium webdriver-manager requests
-          # Verify Chrome installed
-          which google-chrome || which chromium-browser || echo "Chrome not found!"
-          google-chrome --version || chromium-browser --version || echo "Chrome version check failed"
+          # Set Chrome path for Selenium
+          echo "CHROME_BIN=$(which chromium-browser)" >> $GITHUB_ENV
+          # Verify Chromium installed
+          chromium-browser --version || echo "Chromium not found!"
 
       - name: Connect to VPN (ProtonVPN WireGuard)
         run: |
