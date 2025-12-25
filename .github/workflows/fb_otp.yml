@@ -96,70 +96,59 @@ jobs:
           PROTON_USER: ${{ secrets.PROTON_USER }}
           PROTON_PASSWORD: ${{ secrets.PROTON_PASS }}
         run: |
-          # Initialize ProtonVPN CLI (Official)
-          # The Community CLI returns HTTP 422 (API changed?), so we switch back to Official.
-          echo "Installing Official ProtonVPN CLI..."
+          # Initialize ProtonVPN (OpenVPN Direct)
+          # We bypass the CLI tools (Community=422, Official=DBus/Keyring issues) and use OpenVPN directly.
+          echo "Setting up OpenVPN..."
+          sudo apt-get install -y openvpn
           
-          # Install Official Repo & CLI
-          sudo apt-get install -y expect curl
-          sudo install -m 0755 -d /etc/apt/keyrings
-          wget -qO - https://repo.protonvpn.com/debian/public_key.asc | sudo tee /etc/apt/keyrings/protonvpn.asc
-          echo "deb [signed-by=/etc/apt/keyrings/protonvpn.asc] https://repo.protonvpn.com/debian stable main" | sudo tee /etc/apt/sources.list.d/protonvpn.list
-          sudo apt-get update
-          sudo apt-get install -y protonvpn-cli
+          # Create Auth File
+          echo "${{ secrets.PROTON_USER }}" > vpn-auth.txt
+          echo "${{ secrets.PROTON_PASS }}" >> vpn-auth.txt
+          chmod 600 vpn-auth.txt
           
-          # Fix: Install keyrings.alt and configure PlaintextKeyring to avoid DBus/SecretService errors in headless
-          echo "Configuring Plaintext Keyring..."
-          sudo pip install keyrings.alt --break-system-packages
-          sudo mkdir -p /root/.config/python_keyring
-          echo -e "[backend]\ndefault-keyring=keyrings.alt.file.PlaintextKeyring" | sudo tee /root/.config/python_keyring/keyringrc.cfg
-
-          # Find binary
-          CLI_PATH=$(which protonvpn-cli || which protonvpn || echo "")
-          if [ -z "$CLI_PATH" ]; then 
-             echo "Error: Official protonvpn-cli not found!"
+          # Download generic free server configs (US)
+          # Source: https://github.com/alefvanoon/Proton-Free-OVPN
+          # We try a few servers in case one is down.
+          SERVERS=("us-va-104.protonvpn.com.udp.ovpn" "us-va-105.protonvpn.com.udp.ovpn" "us-va-106.protonvpn.com.udp.ovpn")
+          BASE_URL="https://raw.githubusercontent.com/alefvanoon/Proton-Free-OVPN/master"
+          
+          CONNECTED=false
+          for SERVER in "${SERVERS[@]}"; do
+            echo "Attempting to connect to $SERVER..."
+            curl -sSL "$BASE_URL/$SERVER" -o vpn-config.ovpn
+            
+            # Start OpenVPN in background
+            sudo openvpn --config vpn-config.ovpn --auth-user-pass vpn-auth.txt --daemon
+            
+            # Wait for connection
+            echo "Waiting for VPN connection..."
+            for i in {1..15}; do
+               if ip addr show tun0 > /dev/null 2>&1; then
+                  echo "VPN Interface tun0 is up!"
+                  # Double check connectivity
+                  sleep 5
+                  CURRENT_IP=$(curl -s --max-time 5 https://api.ipify.org || echo "unknown")
+                  echo "Current IP: $CURRENT_IP"
+                  if [ "$CURRENT_IP" != "unknown" ]; then
+                     CONNECTED=true
+                     break 2
+                  fi
+               fi
+               sleep 2
+            done
+            
+            echo "Connection failed or timed out. Killing OpenVPN..."
+            sudo killall openvpn || true
+            rm vpn-config.ovpn
+            sleep 2
+          done
+          
+          if [ "$CONNECTED" = false ]; then
+             echo "Error: Could not connect to any ProtonVPN server."
              exit 1
           fi
-          echo "Using binary: $CLI_PATH"
           
-          # Login with Expect
-          echo "Logging in to ProtonVPN..."
-          cat <<EOF > login_proton.exp
-          #!/usr/bin/expect
-          spawn sudo env DBUS_SESSION_BUS_ADDRESS=\$env(DBUS_SESSION_BUS_ADDRESS) PYTHON_KEYRING_BACKEND=keyrings.alt.file.PlaintextKeyring $CLI_PATH login "\$env(PROTON_USER)"
-          set timeout 30
-          
-          expect {
-            -nocase "want to proceed" { send "y\r"; exp_continue }
-            -nocase "password:" { send "\$env(PROTON_PASSWORD)\r" }
-          }
-          
-          expect eof
-          EOF
-          
-          chmod +x login_proton.exp
-          # Use dbus-run-session to provide DBUS_SESSION_BUS_ADDRESS
-          dbus-run-session -- ./login_proton.exp
-          
-          # Connect with Expect (to handle root warning)
-          echo "Connecting..."
-          cat <<EOF > connect_proton.exp
-          #!/usr/bin/expect
-          spawn sudo env DBUS_SESSION_BUS_ADDRESS=\$env(DBUS_SESSION_BUS_ADDRESS) PYTHON_KEYRING_BACKEND=keyrings.alt.file.PlaintextKeyring $CLI_PATH c --cc US
-          set timeout 30
-          
-          expect {
-            -nocase "want to proceed" { send "y\r"; exp_continue }
-            eof
-          }
-          EOF
-          chmod +x connect_proton.exp
-          dbus-run-session -- ./connect_proton.exp
-          
-          # Verify connection
-          sleep 15
-          sudo protonvpn s
-          curl -s --max-time 10 https://ipinfo.io/ip || curl -s ifconfig.me
+          echo "VPN Connected Successfully."
       
       - name: Get IP and WARP Status
         id: ip
