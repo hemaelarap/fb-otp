@@ -91,113 +91,93 @@ jobs:
           sudo apt-get install -y openvpn dialog python3-pip expect wget
           pip install selenium webdriver-manager requests
 
-      - name: Connect to ProtonVPN (Random Server)
-        env:
-          PROTON_USER: ${{ secrets.PROTON_USER }}
-          PROTON_PASSWORD: ${{ secrets.PROTON_PASS }}
+      - name: Connect to VPN (VPNGate - Free Public VPN)
         run: |
-          # Initialize ProtonVPN (OpenVPN Direct)
-          # We bypass the CLI tools (Community=422, Official=DBus/Keyring issues) and use OpenVPN directly.
-          echo "Setting up OpenVPN..."
-          sudo apt-get install -y openvpn resolvconf
+          # VPNGate - Free Public VPN Relay Service
+          # No registration or credentials needed!
+          # API: http://www.vpngate.net/api/iphone/
           
-          # Fix DNS: Add public DNS servers (Google, Cloudflare) to ensure hostname resolution
-          echo "Configuring DNS..."
+          echo "🌐 Setting up VPNGate VPN..."
+          sudo apt-get install -y openvpn
+          
+          # Configure DNS
           echo "nameserver 8.8.8.8" | sudo tee /etc/resolv.conf > /dev/null
           echo "nameserver 1.1.1.1" | sudo tee -a /etc/resolv.conf > /dev/null
-          echo "nameserver 8.8.4.4" | sudo tee -a /etc/resolv.conf > /dev/null
           
-          # Test DNS resolution
-          echo "Testing DNS resolution..."
-          nslookup nl-109.protonvpn.com || echo "DNS test failed"
+          # Fetch VPNGate server list
+          echo "📥 Fetching VPNGate server list..."
+          curl -s "http://www.vpngate.net/api/iphone/" > vpngate_servers.csv
           
-          # Create Auth File
-          echo "${{ secrets.PROTON_USER }}" > vpn-auth.txt
-          echo "${{ secrets.PROTON_PASS }}" >> vpn-auth.txt
-          chmod 600 vpn-auth.txt
-          
-          # Validate credentials exist
-          USER_LEN=$(wc -c < vpn-auth.txt | tr -d ' ')
-          echo "Auth file size: $USER_LEN bytes"
-          if [ "$USER_LEN" -lt 10 ]; then
-             echo "ERROR: Credentials appear to be empty or too short!"
-             echo "Please set PROTON_USER and PROTON_PASS secrets in GitHub."
-             exit 1
-          fi
-          
-          # Download generic free server configs (NL - Netherlands)
-          # Source: https://github.com/alefvanoon/Proton-Free-OVPN
-          # NL servers, using correct uppercase format from repo
-          SERVERS=("NL-109.PROTONVPN.COM.udp.ovpn" "NL-110.PROTONVPN.COM.udp.ovpn" "NL-111.PROTONVPN.COM.udp.ovpn")
-          BASE_URL="https://raw.githubusercontent.com/alefvanoon/Proton-Free-OVPN/master"
-          
+          # Parse and try multiple servers
           CONNECTED=false
-          set +e  # Disable errexit for connection loop
-          for SERVER in "${SERVERS[@]}"; do
-            echo "Attempting to connect to $SERVER..."
-            # Download with fail flag
-            if ! curl -sSL -f "$BASE_URL/$SERVER" -o vpn-config.ovpn; then
-               echo "Download failed for $SERVER"
-               continue
+          set +e
+          
+          # Get top servers - EXCLUDE European countries
+          # Column 7 = country name. Exclude: Germany, France, UK, Netherlands, etc.
+          # Prefer: Japan, Korea, USA, Canada, etc.
+          CONFIGS=$(cat vpngate_servers.csv | grep -v "^\*" | tail -n +3 | \
+            grep -viE "Germany|France|United Kingdom|Netherlands|Spain|Italy|Poland|Sweden|Switzerland|Austria|Belgium|Norway|Finland" | \
+            head -15)
+          
+          SERVER_NUM=0
+          while IFS= read -r line; do
+            SERVER_NUM=$((SERVER_NUM + 1))
+            
+            # Extract server info
+            COUNTRY=$(echo "$line" | cut -d',' -f7)
+            IP=$(echo "$line" | cut -d',' -f2)
+            CONFIG_BASE64=$(echo "$line" | cut -d',' -f15)
+            
+            if [ -z "$CONFIG_BASE64" ] || [ "$CONFIG_BASE64" = "" ]; then
+              continue
             fi
+            
+            echo "🔄 Trying server $SERVER_NUM: $COUNTRY ($IP)..."
+            
+            # Decode OpenVPN config
+            echo "$CONFIG_BASE64" | base64 -d > vpn-config.ovpn 2>/dev/null
             
             if [ ! -s vpn-config.ovpn ]; then
-               echo "Downloaded file is empty: $SERVER"
-               continue
+              echo "  ❌ Failed to decode config"
+              continue
             fi
             
-            # Fix: OpenVPN 2.6 strict ordering.
-            # Catch python errors to avoid workflow exit
-            if ! python3 -c "import sys; lines=sys.stdin.readlines(); conns=[i for i,l in enumerate(lines) if '<connection>' in l or '</connection>' in l]; start=conns[0]; end=conns[-1]; print(''.join(lines[:start] + lines[end+1:] + lines[start:end+1]))" < vpn-config.ovpn > fixed.ovpn; then
-               echo "Reorder script failed for $SERVER. File content:"
-               head -n 20 vpn-config.ovpn || true
-               continue
-            fi
-            mv fixed.ovpn vpn-config.ovpn
+            # Start OpenVPN
+            sudo openvpn --config vpn-config.ovpn --daemon --log /tmp/vpn.log
             
-            # Fix: Convert uppercase hostnames to lowercase for DNS resolution
-            sed -i 's/PROTONVPN\.COM/protonvpn.com/g' vpn-config.ovpn
-            
-            # Quick foreground test to capture immediate errors (timeout after 5s)
-            echo "Testing OpenVPN config..."
-            timeout 5 sudo openvpn --config vpn-config.ovpn --auth-user-pass vpn-auth.txt 2>&1 | head -20 || true
-            
-            # Start OpenVPN in background with logging
-            sudo openvpn --config vpn-config.ovpn --auth-user-pass vpn-auth.txt --daemon --log /tmp/vpn.log
-            
-            # Wait for connection
-            echo "Waiting for VPN connection..."
+            # Wait for connection (max 30 seconds)
+            echo "  ⏳ Waiting for connection..."
             for i in {1..15}; do
-               if ip addr show tun0 > /dev/null 2>&1; then
-                  echo "VPN Interface tun0 is up!"
-                  # Double check connectivity
-                  sleep 5
-                  CURRENT_IP=$(curl -s --max-time 5 https://api.ipify.org || echo "unknown")
-                  echo "Current IP: $CURRENT_IP"
-                  if [ "$CURRENT_IP" != "unknown" ]; then
-                     CONNECTED=true
-                     break 2
-                  fi
-               fi
-               sleep 2
+              if ip addr show tun0 > /dev/null 2>&1; then
+                sleep 3
+                NEW_IP=$(curl -s --max-time 5 https://api.ipify.org || echo "unknown")
+                if [ "$NEW_IP" != "unknown" ]; then
+                  echo "  ✅ Connected! New IP: $NEW_IP (Country: $COUNTRY)"
+                  CONNECTED=true
+                  break 2
+                fi
+              fi
+              sleep 2
             done
             
-            echo "Connection failed or timed out. Killing OpenVPN..."
-            echo "--- VPN Log ---"
-            cat /tmp/vpn.log 2>/dev/null || echo "No log file found"
-            echo "--- End VPN Log ---"
-            sudo killall openvpn || true
-            rm vpn-config.ovpn /tmp/vpn.log 2>/dev/null || true
-            sleep 2
-          done
-          set -e  # Re-enable errexit
+            # Failed, try next
+            echo "  ❌ Connection failed, trying next..."
+            sudo killall openvpn 2>/dev/null || true
+            rm vpn-config.ovpn 2>/dev/null || true
+            sleep 1
+            
+          done <<< "$CONFIGS"
+          
+          set -e
           
           if [ "$CONNECTED" = false ]; then
-             echo "Error: Could not connect to any ProtonVPN server."
-             exit 1
+            echo "❌ Could not connect to any VPNGate server."
+            echo "--- Last VPN Log ---"
+            cat /tmp/vpn.log 2>/dev/null || true
+            exit 1
           fi
           
-          echo "VPN Connected Successfully."
+          echo "🎉 VPN Connected Successfully!"
       
       - name: Get IP and WARP Status
         id: ip
