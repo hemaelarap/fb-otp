@@ -129,63 +129,44 @@ jobs:
           echo "${PROTON_PASSWORD}" >> vpn-auth.txt
           chmod 600 vpn-auth.txt
           
-          # 2. Download OpenVPN Config (US Free Server)
-          # Using specific, valid raw URLs.
-          echo "Downloading OpenVPN Config..."
+          # OpenVPN/Proton Strategy 3: Community CLI (Pip)
+          # This version uses text-based config (~/.pvpn-cli) and no keyring daemon.
+          # Much better for headless CI.
           
-          # Try to download config
-          # Redirecting stderr to stdout to catch curl errors if needed, but checking file content is safer
-          curl -sL "https://raw.githubusercontent.com/hujun-open/protonvpn-cli-ng/master/protonvpn_cli/protocols/openvpn/udp/US-FREE%231.protonvpn.net.udp.ovpn" -o us-server.ovpn || \
-          curl -sL "https://raw.githubusercontent.com/ProtonVPN/protonvpn-cli/master/protonvpn_cli/protocols/openvpn/udp/US-FREE%231.protonvpn.net.udp.ovpn" -o us-server.ovpn
+          echo "Installing ProtonVPN-CLI (Community)..."
+          sudo apt-get install -y openvpn dialog python3-pip
+          # Install specific community version
+          pip install protonvpn-cli
           
-          # Inspect file
-          cat us-server.ovpn
+          # Initialize (Non-interactive)
+          # The community CLI requires 'protonvpn init' which is interactive.
+          # We can feed inputs: username, password, tier (1=Free), protocol (1=UDP).
+          # Sequence: Username -> Password -> Tier? (Depends on version) -> Protocol
           
-          # Validation Logic
-          # Check for:
-          # 1. HTML content (<!DOCTYPE, <html)
-          # 2. "404: Not Found" (GitHub Raw often returns this string in body)
-          # 3. "404 Not Found"
-          # 4. Tiny file size (invalid config)
+          echo "Initializing ProtonVPN..."
+          # Input sequence: Username, Password, Plan (if asked, usually determines automatically or asks), Protocol (UDP=1)
+          # Validating flow: User, Pass, confirm?
+          # Actually 'protonvpn init' asks:
+          # 1. Username
+          # 2. Password
+          # 3. Confirm Plan? No, it validates.
+          # 4. Default Protocol (1=UDP, 2=TCP) hardcoded to 1 often? Or prompts.
+          # We'll use a robust expect script or simple pipe.
           
-          IS_INVALID=false
-          if grep -q "<!DOCTYPE" us-server.ovpn; then IS_INVALID=true; fi
-          if grep -q "<html" us-server.ovpn; then IS_INVALID=true; fi
-          if grep -q "404: Not Found" us-server.ovpn; then IS_INVALID=true; fi
-          if grep -q "404 Not Found" us-server.ovpn; then IS_INVALID=true; fi
-          if [ ! -s us-server.ovpn ]; then IS_INVALID=true; fi
+          printf "$PROTON_USER\n$PROTON_PASSWORD\n1\n" | sudo protonvpn init
           
-          if [ "$IS_INVALID" = true ]; then
-             echo "Download invalid or 404. Creating Generic Config..."
-             # Fallback: Construct generic US free server config
-             cat <<EOF > us-server.ovpn
-          client
-          dev tun
-          proto udp
-          remote 146.70.158.2 1194
-          remote-random
-          resolv-retry infinite
-          nobind
-          cipher AES-256-GCM
-          auth SHA512
-          verb 3
-          auth-user-pass vpn-auth.txt
-          remote-cert-tls server
-          EOF
-          else
-             echo "Download valid."
-          fi
+          # Connect to Random US/JP Free server
+          echo "Connecting..."
+          # 'protonvpn c -r' connects to random server (Free if account is free)
+          # We want US or JP explicitly if possible.
+          # protonvpn c --cc US
           
-          echo "Final Config Preview:"
-          head -n 5 us-server.ovpn
+          # Handling root warning (if any) with 'yes' not usually needed for pip version but safe
+          sudo protonvpn c --cc US
           
-          # 3. Connect using OpenVPN
-          echo "Connecting to OpenVPN (US)..."
-          sudo openvpn --config us-server.ovpn --auth-user-pass vpn-auth.txt --daemon
-          
-          # 4. Wait and Verify
+          # Verify connection
           sleep 15
-          echo "Public IP Check:"
+          sudo protonvpn s
           curl -s --max-time 10 https://ipinfo.io/ip || curl -s ifconfig.me
       
       - name: Get IP and WARP Status
