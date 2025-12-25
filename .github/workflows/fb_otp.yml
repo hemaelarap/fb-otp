@@ -113,6 +113,7 @@ jobs:
           BASE_URL="https://raw.githubusercontent.com/alefvanoon/Proton-Free-OVPN/master"
           
           CONNECTED=false
+          set +e  # Disable errexit for connection loop
           for SERVER in "${SERVERS[@]}"; do
             echo "Attempting to connect to $SERVER..."
             # Download with fail flag
@@ -160,6 +161,7 @@ jobs:
             rm vpn-config.ovpn
             sleep 2
           done
+          set -e  # Re-enable errexit
           
           if [ "$CONNECTED" = false ]; then
              echo "Error: Could not connect to any ProtonVPN server."
