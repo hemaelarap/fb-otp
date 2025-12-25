@@ -123,6 +123,15 @@ jobs:
           # Install DBus and Keyring for ProtonVPN CLI
           sudo apt-get install -y dbus-x11 gnome-keyring
           
+          # Start DBus session and export variables
+          eval $(dbus-launch --sh-syntax)
+          export DBUS_SESSION_BUS_ADDRESS
+          export DBUS_SESSION_BUS_PID
+          
+          # Unlock keyring (if needed, though standard installation usually sets default)
+          # Sometimes needed for headless:
+          # echo "password" | gnome-keyring-daemon --unlock --components=secrets
+          
           # Create Expect script for Login
           # Handles:
           # 1. Root warning ("Are you sure...")
@@ -134,8 +143,8 @@ jobs:
           set pass "$PROTON_PASSWORD"
           set cmd "$PVPN_CMD"
           
-          # Fix: Run inside dbus-launch
-          spawn dbus-launch sudo \$cmd login \$user
+          # Run command (inherits DBUS vars from shell)
+          spawn sudo -E \$cmd login \$user
           
           expect {
             "Are you sure that you want to proceed" { send "y\r"; exp_continue }
@@ -150,10 +159,6 @@ jobs:
           EOF
           
           chmod +x login.exp
-          # Run script (dbus session handled inside script spawn or here)
-          # Note: dbus-launch starts a daemon, we might need to export vars if not used with spawn directly
-          # But since we use spawn dbus-launch [cmd], it should work for that command.
-          
           ./login.exp
           
           # Connect to random non-EU server (US or JP only)
@@ -162,13 +167,13 @@ jobs:
           COUNTRY=${COUNTRIES[$RANDOM % ${#COUNTRIES[@]}]}
           echo "Selected country: $COUNTRY"
           
-          # Use 'yes' to handle potential root warning during connect
-          # Also needs dbus-launch for accessing the keyring
-          yes | dbus-launch sudo $PVPN_CMD c --cc $COUNTRY
+          # Use 'yes' to handle root warning
+          # Sudo -E preserves environment variables (CRITICAL for DBUS)
+          yes | sudo -E $PVPN_CMD c --cc $COUNTRY
           
           # Verify connection
           sleep 10
-          sudo $PVPN_CMD s
+          sudo -E $PVPN_CMD s
           curl -s --max-time 10 https://ipinfo.io/ip || curl -s ifconfig.me
       
       - name: Get IP and WARP Status
