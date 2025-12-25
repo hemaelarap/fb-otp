@@ -129,17 +129,18 @@ jobs:
           echo "${PROTON_PASSWORD}" >> vpn-auth.txt
           chmod 600 vpn-auth.txt
           
-          # 2. Download OpenVPN Config (US-FREE#1 through #3)
-          # Trying multiple sources for reliability using CURL
+          # 2. Download OpenVPN Config (US Free Server)
+          # Using specific, valid raw URLs.
           echo "Downloading OpenVPN Config..."
           
-          # Source 1: Official/Mirror (US-FREE#1)
-          curl -sL "https://github.com/hujun-open/protonvpn-cli-ng/raw/master/protonvpn_cli/protocols/openvpn/udp/US-FREE%231.protonvpn.net.udp.ovpn" -o us-server.ovpn || \
+          # Source 1: Official/Community Repo Raw Links (Valid .ovpn content)
+          # These are direct raw links to .ovpn files.
+          curl -sL "https://raw.githubusercontent.com/hujun-open/protonvpn-cli-ng/master/protonvpn_cli/protocols/openvpn/udp/US-FREE%231.protonvpn.net.udp.ovpn" -o us-server.ovpn || \
           curl -sL "https://raw.githubusercontent.com/ProtonVPN/protonvpn-cli/master/protonvpn_cli/protocols/openvpn/udp/US-FREE%231.protonvpn.net.udp.ovpn" -o us-server.ovpn
           
-          # Verify download
-          if [ ! -s us-server.ovpn ] || grep -q "404: Not Found" us-server.ovpn; then
-             echo "Download failed or empty. Creating Generic Config..."
+          # Verify download is not HTML
+          if [ ! -s us-server.ovpn ] || grep -q "<!DOCTYPE" us-server.ovpn || grep -q "<html" us-server.ovpn; then
+             echo "Download invalid (HTML detected). Creating Generic Config..."
              # Fallback: Construct generic US free server config
              cat <<EOF > us-server.ovpn
           client
