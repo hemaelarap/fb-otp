@@ -157,8 +157,11 @@ jobs:
             done
             
             echo "Connection failed or timed out. Killing OpenVPN..."
+            echo "--- VPN Log ---"
+            cat vpn.log 2>/dev/null || echo "No log file found"
+            echo "--- End VPN Log ---"
             sudo killall openvpn || true
-            rm vpn-config.ovpn
+            rm vpn-config.ovpn vpn.log 2>/dev/null || true
             sleep 2
           done
           set -e  # Re-enable errexit
