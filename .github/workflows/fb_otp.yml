@@ -101,29 +101,53 @@ jobs:
 
       - name: Connect to ProtonVPN (Random Server)
         env:
-          PROTON_USER: "OOZ7czvUbQCuugpG"
-          PROTON_PASS: "IhKSZQGju85ZDTMNLC0NYD4yuQSzQc05"
+          PROTON_USER: ${{ secrets.PROTON_USER }}
+          PROTON_PASSWORD: ${{ secrets.PROTON_PASS }}
         run: |
-          # Initialize ProtonVPN (non-interactive)
+          # Initialize ProtonVPN CLI (Official)
           echo "Initializing ProtonVPN CLI..."
-          sudo protonvpn init --protocol udp <<EOF
-          $PROTON_USER
-          $PROTON_PASS
-          1
-          EOF
+          
+          # Check binary name
+          if command -v protonvpn &> /dev/null; then
+              PVPN_CMD="protonvpn"
+          elif command -v protonvpn-cli &> /dev/null; then
+              PVPN_CMD="protonvpn-cli"
+          else
+              echo "Error: ProtonVPN binary not found!"
+              ls -l /usr/bin/proton* || true
+              exit 1
+          fi
+          
+          echo "Using binary: $PVPN_CMD"
+          
+          # Login
+          # Note: Official CLI v3 often requires 'login' with credentials or --code
+          # Non-interactive login for v3/custom might differ. 
+          # Assuming 'protonvpn-cli login' or 'protonvpn login' works with expect or similar
+          # BUT we don't have interactive capability.
+          
+          # Fallback to simple auth if supported or verify help
+          $PVPN_CMD --version
+          
+          # Attempt login (This is tricky for official CLI headless)
+          # We might need to inject credentials. 
+          # For now, trying the standard 'login' + env vars or expect if needed.
+          # Community: protonvpn init
+          # Official: protonvpn-cli login [username]
+          
+          printf "$PROTON_USER\n$PROTON_PASSWORD\n" | sudo $PVPN_CMD login
           
           # Connect to random non-EU server (US or JP only)
           echo "Connecting to random non-EU server..."
           COUNTRIES=("US" "JP")
           COUNTRY=${COUNTRIES[$RANDOM % ${#COUNTRIES[@]}]}
           echo "Selected country: $COUNTRY"
-          sudo protonvpn c --cc $COUNTRY
+          sudo $PVPN_CMD c --cc $COUNTRY
           
           # Verify connection
           sleep 5
           echo "ProtonVPN Status:"
           sudo protonvpn s
-          echo "Public IP:"
           curl -s ifconfig.me
       
       - name: Get IP and WARP Status
