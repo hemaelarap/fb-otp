@@ -920,6 +920,7 @@ def process_batch(numbers, headless=True, max_workers=1):
                 results.append(res)
             except Exception as exc:
                 print(f'{phone} generated an exception: {exc}')
+                print(f"FINAL_STATUS_MSG: {str(exc)}")
                 stats.update("ERROR")
     
     return results
@@ -941,5 +942,15 @@ if __name__ == "__main__":
         process_batch(numbers, headless=True, max_workers=1)
     else:
         # Single number
-        browser = FacebookOTPBrowser(headless=False) # Visual mode for single test
-        browser.send_otp(arg)
+        browser = FacebookOTPBrowser(headless=True) # Ensure headless for batch
+        try:
+             res = browser.send_otp(arg)
+             # Print final status for shell script extraction
+             if res['status'] == 'ERROR':
+                 print(f"FINAL_STATUS_MSG: {res['message']}")
+             elif res['status'] == 'OTP_SENT':
+                  print("OTP_SENT") 
+                  print(f"Final URL: {res.get('last_url', '')}")
+        except Exception as e:
+             print(f"FINAL_STATUS_MSG: Critical Script Error: {e}")
+
