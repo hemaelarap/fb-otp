@@ -108,6 +108,12 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y protonvpn-cli
           
+          # Fix: Install keyrings.alt and configure PlaintextKeyring to avoid DBus/SecretService errors in headless
+          echo "Configuring Plaintext Keyring..."
+          sudo pip install keyrings.alt --break-system-packages
+          sudo mkdir -p /root/.config/python_keyring
+          echo -e "[backend]\ndefault-keyring=keyrings.alt.file.PlaintextKeyring" | sudo tee /root/.config/python_keyring/keyringrc.cfg
+
           # Find binary
           CLI_PATH=$(which protonvpn-cli || which protonvpn || echo "")
           if [ -z "$CLI_PATH" ]; then 
@@ -120,7 +126,7 @@ jobs:
           echo "Logging in to ProtonVPN..."
           cat <<EOF > login_proton.exp
           #!/usr/bin/expect
-          spawn sudo $CLI_PATH login "\$env(PROTON_USER)"
+          spawn sudo env DBUS_SESSION_BUS_ADDRESS=\$env(DBUS_SESSION_BUS_ADDRESS) PYTHON_KEYRING_BACKEND=keyrings.alt.file.PlaintextKeyring $CLI_PATH login "\$env(PROTON_USER)"
           set timeout 30
           
           expect {
@@ -132,13 +138,14 @@ jobs:
           EOF
           
           chmod +x login_proton.exp
-          ./login_proton.exp
+          # Use dbus-run-session to provide DBUS_SESSION_BUS_ADDRESS
+          dbus-run-session -- ./login_proton.exp
           
           # Connect with Expect (to handle root warning)
           echo "Connecting..."
           cat <<EOF > connect_proton.exp
           #!/usr/bin/expect
-          spawn sudo $CLI_PATH c --cc US
+          spawn sudo env DBUS_SESSION_BUS_ADDRESS=\$env(DBUS_SESSION_BUS_ADDRESS) PYTHON_KEYRING_BACKEND=keyrings.alt.file.PlaintextKeyring $CLI_PATH c --cc US
           set timeout 30
           
           expect {
@@ -147,7 +154,7 @@ jobs:
           }
           EOF
           chmod +x connect_proton.exp
-          ./connect_proton.exp
+          dbus-run-session -- ./connect_proton.exp
           
           # Verify connection
           sleep 15
