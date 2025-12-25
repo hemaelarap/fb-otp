@@ -120,35 +120,47 @@ jobs:
           
           echo "Using binary: $PVPN_CMD"
           
-          # Login
-          # Note: Official CLI v3 often requires 'login' with credentials or --code
-          # Non-interactive login for v3/custom might differ. 
-          # Assuming 'protonvpn-cli login' or 'protonvpn login' works with expect or similar
-          # BUT we don't have interactive capability.
+          # Create Expect script for Login
+          # Handles:
+          # 1. Root warning ("Are you sure...")
+          # 2. Password prompt
+          cat <<EOF > login.exp
+          #!/usr/bin/expect
+          set timeout 30
+          set user "$PROTON_USER"
+          set pass "$PROTON_PASSWORD"
+          set cmd "$PVPN_CMD"
           
-          # Fallback to simple auth if supported or verify help
-          $PVPN_CMD --version
+          spawn sudo \$cmd login \$user
           
-          # Attempt login (This is tricky for official CLI headless)
-          # We might need to inject credentials. 
-          # For now, trying the standard 'login' + env vars or expect if needed.
-          # Community: protonvpn init
-          # Official: protonvpn-cli login [username]
+          expect {
+            "Are you sure that you want to proceed" { send "y\r"; exp_continue }
+            "Enter your Proton VPN password" { send "\$pass\r"; exp_continue }
+            "Enter.*password" { send "\$pass\r"; exp_continue }
+            "Successfully logged in" { exit 0 }
+            timeout { exit 1 }
+            eof
+          }
+          catch wait result
+          exit [lindex \$result 3]
+          EOF
           
-          printf "$PROTON_USER\n$PROTON_PASSWORD\n" | sudo $PVPN_CMD login
+          chmod +x login.exp
+          ./login.exp
           
           # Connect to random non-EU server (US or JP only)
           echo "Connecting to random non-EU server..."
           COUNTRIES=("US" "JP")
           COUNTRY=${COUNTRIES[$RANDOM % ${#COUNTRIES[@]}]}
           echo "Selected country: $COUNTRY"
-          sudo $PVPN_CMD c --cc $COUNTRY
+          
+          # Use 'yes' to handle potential root warning during connect
+          yes | sudo $PVPN_CMD c --cc $COUNTRY
           
           # Verify connection
-          sleep 5
-          echo "ProtonVPN Status:"
-          sudo protonvpn s
-          curl -s ifconfig.me
+          sleep 10
+          sudo $PVPN_CMD s
+          curl -s --max-time 10 https://ipinfo.io/ip || curl -s ifconfig.me
       
       - name: Get IP and WARP Status
         id: ip
