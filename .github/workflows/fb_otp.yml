@@ -88,35 +88,35 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y wireguard resolvconf unzip
+          sudo apt-get install -y openvpn dialog python3-pip expect
           pip install selenium webdriver-manager requests
+          # Install ProtonVPN CLI
+          pip install protonvpn-cli
 
-      - name: Connect to ProtonVPN (WireGuard)
+      - name: Connect to ProtonVPN (Random Server)
         env:
-          # Note: WireGuard config contains keys, User/Pass not strictly needed for interface but keeping secrets clean
-          PROTON_CONFIG: "W0ludGVyZmFjZV0KIyBCb3VuY2luZyA9IDAKUHJpdmF0ZUtleSA9IGlHSXFrOEExVHZUVkRiUEJ4eWZFcmZpZFU3T2JBa3FCS2JHN2hJc1pYbWM9CkFkZHJlc3MgPSAxMC4yLjAuMi8zMgpETlMgPSAxMC4yLjAuMQoKW1BlZXJdCiMgQ0EtRlJFRSMxNApQdWJsaWNLZXkgPSA5SVJhRTJ3cWNBVmtOOWNlVU1GWmE3cm9FMWlESVZKRWs1UzR3TUtzTzMwPQpBbGxvd2VkSVBzID0gMC4wLjAuMC8wLCA6Oi8wCkVuZHBvaW50ID0gMTQ5LjIyLjk1LjE5Mzo1MTgyMA=="
+          PROTON_USER: "OOZ7czvUbQCuugpG"
+          PROTON_PASS: "IhKSZQGju85ZDTMNLC0NYD4yuQSzQc05"
         run: |
-          # 1. Decode Config (fail if missing)
-          if [ -z "$PROTON_CONFIG" ]; then
-            echo "❌ ERROR: PROTON_CONFIG_BASE64 secret is missing!"
-            exit 1
-          fi
-          echo "$PROTON_CONFIG" | base64 -d > wg0.conf
-          # Remove DNS line to avoid resolvconf hang
-          sed -i '/^DNS/d' wg0.conf
+          # Initialize ProtonVPN (non-interactive)
+          echo "Initializing ProtonVPN CLI..."
+          sudo protonvpn init --protocol udp <<EOF
+          $PROTON_USER
+          $PROTON_PASS
+          1
+          EOF
           
-          # 2. Fix permissions
-          chmod 600 wg0.conf
+          # Connect to random non-EU server (US or JP only)
+          echo "Connecting to random non-EU server..."
+          COUNTRIES=("US" "JP")
+          COUNTRY=${COUNTRIES[$RANDOM % ${#COUNTRIES[@]}]}
+          echo "Selected country: $COUNTRY"
+          sudo protonvpn c --cc $COUNTRY
           
-          # 3. Start WireGuard
-          echo "Starting WireGuard..."
-          sudo wg-quick up ./wg0.conf
-          
-          # 4. Verify connection
-          echo "WireGuard Status:"
-          sudo wg show
+          # Verify connection
           sleep 5
-          echo "✅ WireGuard Connected"
+          echo "ProtonVPN Status:"
+          sudo protonvpn s
           echo "Public IP:"
           curl -s ifconfig.me
       
