@@ -89,8 +89,8 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y openvpn dialog python3-pip expect wget
-          # Chrome dependencies for headless mode
-          sudo apt-get install -y xvfb libgconf-2-4 libnss3 libxss1 libasound2t64 libatk-bridge2.0-0 libgtk-3-0
+          # Chrome dependencies for headless mode (Ubuntu 24.04 compatible)
+          sudo apt-get install -y xvfb libnss3 libxss1 libasound2t64 libatk-bridge2.0-0 libgtk-3-0 || true
           pip install selenium webdriver-manager requests
           # Verify Chrome installed
           which google-chrome || which chromium-browser || echo "Chrome not found!"
