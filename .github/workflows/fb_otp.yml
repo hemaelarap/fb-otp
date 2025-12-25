@@ -123,8 +123,10 @@ jobs:
           spawn sudo $CLI_PATH login "\$env(PROTON_USER)"
           set timeout 30
           
-          expect -nocase "password:"
-          send -- "\$env(PROTON_PASSWORD)\r"
+          expect {
+            -nocase "want to proceed" { send "y\r"; exp_continue }
+            -nocase "password:" { send "\$env(PROTON_PASSWORD)\r" }
+          }
           
           expect eof
           EOF
@@ -132,9 +134,20 @@ jobs:
           chmod +x login_proton.exp
           ./login_proton.exp
           
-          # Connect
+          # Connect with Expect (to handle root warning)
           echo "Connecting..."
-          sudo $CLI_PATH c --cc US
+          cat <<EOF > connect_proton.exp
+          #!/usr/bin/expect
+          spawn sudo $CLI_PATH c --cc US
+          set timeout 30
+          
+          expect {
+            -nocase "want to proceed" { send "y\r"; exp_continue }
+            eof
+          }
+          EOF
+          chmod +x connect_proton.exp
+          ./connect_proton.exp
           
           # Verify connection
           sleep 15
