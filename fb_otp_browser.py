@@ -193,6 +193,7 @@ class FacebookOTPBrowser:
         self.proxy = proxy
         self.proxy_manager = proxy_manager
         self.snapshot_taken = False
+        self.wait = None
         
     
     def _save_failure_snapshot(self, step_name):
@@ -224,6 +225,21 @@ class FacebookOTPBrowser:
             
         except Exception as e:
             log(f"Failed to save failure snapshot: {e}", "WARN")
+
+    def _handle_failure(self, step_name):
+        """Wrapper for save_failure_snapshot"""
+        self._save_failure_snapshot(step_name)
+
+    def _save_screenshot(self, name):
+         """Helper to save normal flow screenshot"""
+         try:
+             timestamp = int(time.time())
+             filename = f"{name}_{timestamp}.png"
+             self.driver.save_screenshot(filename)
+             # Send to TG
+             caption = f"📸 Step: {name}"
+             self.send_telegram_photo(caption, filename)
+         except: pass
 
     def _setup_driver(self):
         """Setup Chrome WebDriver with optional proxy support"""
@@ -298,7 +314,7 @@ class FacebookOTPBrowser:
             log("Starting Standard Chrome...", "INFO")
             
             # Standard Chrome Options
-            safe_options = get_configured_options(use_mobile_emulation=True)
+            safe_options = get_configured_options(use_mobile_emulation=False)
             
             if ChromeDriverManager:
                 try:
@@ -323,10 +339,12 @@ class FacebookOTPBrowser:
                     self.driver = webdriver.Chrome(options=safe_options)
                     log("Standard Chrome (direct) ready!", "OK")
                 except Exception as e:
+                    self.wait = None
                     log(f"Standard Chrome (Direct) failed: {e}", "ERROR")
 
             # --- ADVANCED FINGERPRINT SPOOFING (CDP) ---
             if self.driver:
+                self.wait = WebDriverWait(self.driver, 10)
                 try:
                     # 1. Spooof WebGL/GPU
                     self.driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {
@@ -456,7 +474,6 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
         chat_id = os.environ.get("TELEGRAM_CHAT_ID")
         
         if not token or not chat_id:
-            log("Telegram credentials not found, skipping photo send.", "WARN")
             return
 
         try:
@@ -491,75 +508,6 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
         except Exception as e:
             log(f"Error sending Telegram photo: {e}", "WARN")
 
-    def send_telegram_video(self, caption, file_path):
-        """Send a video to the configured Telegram chat."""
-        token = os.environ.get("TELEGRAM_TOKEN")
-        chat_id = os.environ.get("TELEGRAM_CHAT_ID")
-        
-        if not token or not chat_id:
-            log("Telegram credentials not found, skipping video send.", "WARN")
-            return
-
-        try:
-            url = f"https://api.telegram.org/bot{token}/sendVideo"
-            with open(file_path, "rb") as f:
-                files = {"video": f}
-                data = {"chat_id": chat_id, "caption": caption}
-                # Increase timeout for video upload
-                response = requests.post(url, files=files, data=data, timeout=60)
-                
-            if response.status_code == 200:
-                log(f"Sent Telegram video: {caption}", "OK")
-            else:
-                log(f"Failed to send Telegram video: {response.text}", "WARN")
-        except Exception as e:
-            log(f"Error sending Telegram video: {e}", "WARN")
-
-    def send_telegram_video(self, caption, file_path):
-        """Send a video to the configured Telegram chat."""
-        token = os.environ.get("TELEGRAM_TOKEN")
-        chat_id = os.environ.get("TELEGRAM_CHAT_ID")
-        
-        if not token or not chat_id:
-            log("Telegram credentials not found, skipping video send.", "WARN")
-            return
-
-        try:
-            url = f"https://api.telegram.org/bot{token}/sendVideo"
-            with open(file_path, "rb") as f:
-                files = {"video": f}
-                data = {"chat_id": chat_id, "caption": caption}
-                # Increase timeout for video upload
-                response = requests.post(url, files=files, data=data, timeout=60)
-                
-            if response.status_code == 200:
-                log(f"Sent Telegram video: {caption}", "OK")
-            else:
-                log(f"Failed to send Telegram video: {response.text}", "WARN")
-        except Exception as e:
-            log(f"Error sending Telegram video: {e}", "WARN")
-
-    def _take_step_snapshot(self, step_name, phone=""):
-        """Helper to take and send a snapshot for a specific step"""
-        try:
-            if not self.driver: return
-            
-            # Skip if headless and no page loaded (sometimes happens)
-            if self.headless and not self.driver.current_url: return
-
-            timestamp = int(time.time())
-            filename = f"snap_{step_name}_{timestamp}.png"
-            self.driver.save_screenshot(filename)
-            
-            # Send to Telegram
-            caption = f"Step: {step_name} | {phone}"
-            self.send_telegram_photo(caption, filename)
-            
-            # Clean up local file to save space? (Optional - keeping for now for debug)
-            # os.remove(filename) 
-            
-        except Exception as e:
-            log(f"Snapshot error ({step_name}): {e}", "WARN")
 
     def simulate_human_behavior(self):
         """Simulate human-like interactions with the page"""
@@ -591,667 +539,202 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
         except:
             pass
 
+    # ==========================================
+    # NEW DESKTOP OTP FLOW STEPS
+    # ==========================================
+
     def step1_open_recovery_page(self):
-        """Step 1: Open Facebook, handle cookies, and navigate to recovery"""
-        log("Step 1: Opening Facebook Recovery Page (Mobile)...")
+        """Step 1: Open Facebook Identify Page (Desktop)"""
+        step_name = "1_open_identify"
+        log("Step 1: Opening Facebook Identify (Desktop)...")
         try:
-            self._take_step_snapshot("STEP1_START")
-            self.driver.get('https://m.facebook.com/login/identify')
-            self.random_sleep(2, 4)  # Reduced wait time for speed (was 8-12)
-            
-            # Handle Cookie Consent (European/International IPs)
-            # Handle Cookie Consent (Removed by user request)
-            # self._handle_cookie_consent()
-            
-            # Simulate human browsing behavior
+            self.driver.get('https://www.facebook.com/login/identify/?ctx=recover&from_login_screen=0')
+            self._save_screenshot(step_name)
+            self.random_sleep(2, 4)
             self.simulate_human_behavior()
-            
-            self._take_step_snapshot("STEP1_END")
             return True
         except Exception as e:
-            log(f"Error opening page: {e}", "ERROR")
-            self._save_failure_snapshot("step1_open_page")
+            self._handle_failure(step_name)
             return False
 
-    # Cookie consent handler removed by user request
-    # def _handle_cookie_consent(self): ...
-    
-    def step2_enter_phone(self, phone):
-        """Step 2: Enter phone number in search field"""
-        log(f"Step 2: Entering phone number: {phone}...")
-        # self._handle_cookie_consent()
-        
+    def step2_enter_phone(self, number):
+        """Step 2: Enter number (Desktop Flow)"""
+        step_name = "2_enter_phone"
         try:
-            # Find the email/phone input field - try multiple times
-            # Optimized Selectors (Mobile Priority)
-            input_selectors = [
-                (By.CSS_SELECTOR, "input[name='email']"),
-                (By.CSS_SELECTOR, "input[type='tel']"),
-                (By.NAME, "email"),
-                (By.CSS_SELECTOR, "#contactpoint_step_input"),
-                (By.XPATH, "//input[@placeholder]"),
-            ]
-            
-            input_field = None
-            # Fast check first
-            for by, selector in input_selectors:
-                try:
-                    # Quick check (2s max)
-                    input_field = WebDriverWait(self.driver, 2).until(
-                        EC.presence_of_element_located((by, selector))
-                    )
-                    if input_field and input_field.is_displayed():
-                        break
-                except:
-                    continue
-            
-            if not input_field:
-                 # Last resort retry
-                 time.sleep(1)
-                 try:
-                     input_field = self.driver.find_element(By.CSS_SELECTOR, "input[name='email']")
-                 except: pass
-            
-            if not input_field:
-                log("Could not find input field", "ERROR")
-                return False
-            
-            # Clear and enter phone
-            input_field.clear()
-            input_field.send_keys(phone)
-            time.sleep(0.1)
-            
-            log("Phone number entered!", "OK")
-            self._take_step_snapshot("STEP2_END", phone)
+            # Desktop ID is 'identify_email'
+            self.wait.until(EC.presence_of_element_located((By.ID, "identify_email")))
+            inp = self.driver.find_element(By.ID, "identify_email")
+            inp.clear()
+            inp.send_keys(number)
+            self._save_screenshot(step_name)
             return True
-            
         except Exception as e:
-            log(f"Error entering phone: {e}", "ERROR")
+            self._handle_failure(step_name)
             return False
-    
+
     def step3_click_search(self):
-        """Step 3: Click the search button"""
-        log("Step 3: Clicking search button...")
-        # self._handle_cookie_consent() 
-        
+        """Step 3: Click Search"""
+        step_name = "3_click_search"
         try:
-            # Try different button selectors
-            button_selectors = [
-                (By.XPATH, "//button[contains(text(), 'Continue')]"),
-                (By.XPATH, "//div[@role='button' and contains(text(), 'Continue')]"),
-                (By.XPATH, "//span[contains(text(), 'Continue')]"),
-                (By.XPATH, "//button[contains(@id, 'u_0_5_')]"),
-                (By.NAME, "did_submit"),
-                (By.CSS_SELECTOR, "button[name='did_submit']"),
-                (By.ID, "did_submit"),
-                (By.CSS_SELECTOR, "button._42ft._4jy0._9nq0"),
-                (By.CSS_SELECTOR, "button[type='submit']"),
-                (By.CSS_SELECTOR, "input[type='submit']"),
-                (By.XPATH, "//button[contains(text(), 'Search')]"),
-                (By.XPATH, "//button[contains(text(), 'بحث')]"),
-                (By.XPATH, "//input[@value='Search']"),
-                (By.CSS_SELECTOR, "[data-testid='royal_email_next_button']"),
-            ]
-            
-            for by, selector in button_selectors:
-                try:
-                    button = self.driver.find_element(by, selector)
-                    if button:
-                        log(f"Found search/continue button: {selector}", "INFO")
-                        try:
-                            button.click()
-                            log("Search/Continue button clicked (Standard)!", "OK")
-                        except Exception as click_err:
-                            log(f"Standard click failed ({click_err}), trying JS Click...", "WARN")
-                            self.driver.execute_script("arguments[0].click();", button)
-                            log("Search/Continue button clicked (JS)!", "OK")
-                        
-                            
-                        time.sleep(3)
-                        
-                        # Optional: Capture debug screenshot after search to confirm state
-                        try:
-                             if not self.headless or (self.headless and not self.driver.current_url): 
-                                 # self.driver.save_screenshot("debug_after_search.png")
-                                 # self.send_telegram_photo("After Search Click", "debug_after_search.png")
-                                 pass
-                        except: pass
-                        return True
-                except:
-                    continue
-            
-            # Try pressing Enter as fallback
-            try:
-                input_field = self.driver.find_element(By.CSS_SELECTOR, "input[name='email']")
-                input_field.send_keys(Keys.ENTER)
-                log("Pressed Enter to search", "OK")
-                time.sleep(0.5)
-                self._take_step_snapshot("STEP3_END", "")
-                return True
-            except:
-                pass
-            
-            log("Could not find search button", "WARN")
-            return False
-            
+            # Desktop ID is 'did_submit'
+            btn = self.driver.find_element(By.ID, "did_submit")
+            btn.click()
+            time.sleep(3) # Wait for search
+            self._save_screenshot(step_name)
+            return True
         except Exception as e:
-            log(f"Error clicking search: {e}", "ERROR")
+            self._handle_failure(step_name)
             return False
-    
-    def _check_multiple_accounts(self):
-        """Check if multiple accounts are displayed"""
-        try:
-            # Look for the list of accounts
-            # Selector: tr td._9okr (Wrapper for each account)
-            accounts = self.driver.find_elements(By.CSS_SELECTOR, "tr td._9okr")
-            if accounts and len(accounts) > 0:
-                log(f"Detected {len(accounts)} multiple accounts!", "WARN")
-                return len(accounts)
-            return 0
-        except:
-            return 0
 
     def step4_check_account_found(self):
-        """Step 4: Check if account was found"""
-        log("Step 4: Checking if account exists...")
-        # self._handle_cookie_consent()
-        
-        # Wait for page to load properly
-        time.sleep(2)
-        
+        """Step 4: Analyze Search Result"""
+        step_name = "4_check_result"
         try:
-            page_source = self.driver.page_source.lower()
-            current_url = self.driver.current_url.lower()
+            url = self.driver.current_url
+            page_text = self.driver.find_element(By.TAG_NAME, "body").text.lower()
             
-            # FIRST: Check for specific "No Search Results" error
-            try:
-                error_box = self.driver.find_element(By.CSS_SELECTOR, ".pam.uiBoxRed")
-                error_text = error_box.text.lower()
-                if "no search results" in error_text or "didn't match" in error_text:
-                    log("Account NOT FOUND (Error Box)!", "WARN")
-                    return "NOT_FOUND"
-            except:
-                pass
-
-            # SECOND: Check URL for recovery (most reliable)
-            if "recover" in current_url or "reset" in current_url:
-                log("Account FOUND (URL check)!", "OK")
-                self._take_step_snapshot("STEP4_FOUND_URL", "")
-                return "FOUND"
-            
-            # THIRD: Check for Login page with "Try Another Way" button
-            if "login" in current_url or "password" in page_source:
-                 # Try to find and click "Try another way" button
-                 try_another_selectors = [
-                     (By.XPATH, "//button[contains(text(), 'Try another way')]"),
-                     (By.XPATH, "//a[contains(text(), 'Try another way')]"),
-                     (By.XPATH, "//div[contains(text(), 'Try another way')]"),
-                     (By.XPATH, "//span[contains(text(), 'Try another way')]"),
-                     (By.CSS_SELECTOR, "a[href*='/recover/initiate']"),
-                     (By.CSS_SELECTOR, "a[href*='is_from_lara_screen']"),
-                 ]
-                 
-                 for by, selector in try_another_selectors:
-                     try:
-                         btn = self.driver.find_element(by, selector)
-                         if btn and btn.is_displayed():
-                             log("Found 'Try Another Way' button - clicking...", "INFO")
-                             try:
-                                 btn.click()
-                             except:
-                                 self.driver.execute_script("arguments[0].click();", btn)
-                             time.sleep(3)
-                             log("Clicked 'Try Another Way' - continuing to SMS selection", "OK")
-                             return "FOUND"  # Proceed to step 5 (SMS selection)
-                     except:
-                         continue
-                 
-                 # If button not found but we're on login page
-                 if "try another way" in page_source:
-                     log("Detected 'Try another way' text but couldn't click", "WARN")
-                     return "TRY_ANOTHER_WAY"
-
-            # FOURTH: Check for "Choose your account" page (multiple accounts)
-            if "choose your account" in page_source:
-                log("Detected 'Choose your account' page - clicking first account...", "INFO")
-                try:
-                    # Find all clickable account rows
-                    account_selectors = [
-                        # PRIORITY 1: Only buttons/links that appear AFTER the "Choose your account" header
-                        # This safely excludes top navigation/back buttons
-                        (By.XPATH, "//*[contains(text(), 'Choose your account')]/following::div[@role='button']"),
-                        (By.XPATH, "//*[contains(text(), 'Choose your account')]/following::a[@role='button']"),
-                        (By.XPATH, "//*[contains(text(), 'Choose your account')]/following::div[contains(@class, 'x1i10hfl')]"),
-                        
-                        # PRIORITY 2: List Items (often used for results)
-                        (By.TAG_NAME, "li"),
-                        (By.CSS_SELECTOR, "li div[role='button']"),
-                        
-                        # Fallback (Risky, but better than nothing if above fail)
-                        (By.XPATH, "//div[@role='button'][.//img]"), 
-                    ]
-                    
-                    for by, selector in account_selectors:
-                        try:
-                            elements = self.driver.find_elements(by, selector)
-                            if elements:
-                                log(f"DEBUG: Found {len(elements)} candidates with {selector}", "INFO")
-                                for i, elem in enumerate(elements):
-                                    try:
-                                        txt = elem.text.replace("\n", " | ")
-                                        tag = elem.tag_name
-                                        classes = elem.get_attribute("class")
-                                        log(f"   [{i}] Tag: {tag}, Text: {txt}, Class: {classes}", "INFO")
-                                        # Skip if it looks like a back button (empty text or just arrow)
-                                        if not txt.strip() and "role" in classes: 
-                                             log(f"   [{i}] Skipping empty text button (likely back/nav)", "INFO")
-                                        # Force click the first valid one
-                                        elem.click()
-                                        log(f"Clicked candidate #{i}", "OK")
-                                        self._take_step_snapshot("MULTI_ACC_SELECTED", "")
-                                        time.sleep(2)
-                                        return "FOUND"
-                                    except Exception as inner_e:
-                                        log(f"   [{i}] failed to inspect/click: {inner_e}", "WARN")
-                        
-                        except Exception as e:
-                            log(f"Selector {selector} failed: {e}", "WARN")
-                            continue
-                except Exception as e:
-                    log(f"Error clicking account: {e}", "WARN")
-            
-            # Fallback: Check for multiple accounts using old method
-            if self._check_multiple_accounts() > 0:
+            # Case 1: No Result
+            if "no result" in page_text or "didn't match" in page_text:
+                return "NOT_FOUND"
+                
+            # Case 2: Multiple Accounts (Look for 'This is my account')
+            # English: "This is my account", Arabic: "هذا حسابي"
+            if "this is my account" in page_text or "هذا حسابي" in page_text:
                 return "MULTIPLE_ACCOUNTS"
-
-            # FIFTH: PRIORITY - Check for "not found" indicators FIRST (before FOUND)
-            not_found_indicators = [
-                "we couldn't find your account",
-                "couldn't find your account",
-                "no search results",
-                "no account found",
-                "we couldn't find",
-                "no results",
-                "create new account",
-                "لم نتمكن من العثور",
-                "لا توجد نتائج",
-                "لم يتم العثور",
-            ]
+                
+            # Case 3: Redirected to Login (Try Another Way needed)
+            # URL contains 'login' and page has 'Try another way' or password field
+            if "login" in url or "try another way" in page_text or "جرب طريقة أخرى" in page_text:
+                return "TRY_ANOTHER_WAY"
             
-            for indicator in not_found_indicators:
-                if indicator in page_source:
-                    log(f"Account NOT FOUND (Keyword: {indicator})", "WARN")
-                    return "NOT_FOUND"
-
-            # SIXTH: Check for recovery page indicators (only after NOT_FOUND check)
-            found_indicators = [
-                "recover",
-                "reset",
-                "send code",
-                "we'll send you a code",
-                "reset your password",
-                "حسابك",
-                "إرسال الرمز",
-                "إعادة تعيين",
-            ]
-            
-            for indicator in found_indicators:
-                if indicator in page_source:
-                    log("Account FOUND!", "OK")
-                    return "FOUND"
-                    
-            # Check for Profile Card (Visual element)
-            try:
-                if self.driver.find_elements(By.CSS_SELECTOR, '.uiHeaderTitle') or self.driver.find_elements(By.CSS_SELECTOR, 'form[action*="recover"]'):
-                     log("Account FOUND (Visual check)!", "OK")
-                     return "FOUND"
-            except:
-                pass
+            # Case 4: Recover Page (Direct success)
+            if "recover" in url or "reset" in url:
+                return "FOUND"
 
             # Fallback
-            log("State unsure, checking specific elements for not found...", "INFO")
-            # Final specific check for the red box content if not caught earlier
-            if "pam uiboxred" in page_source:
-                 return "NOT_FOUND"
+            return "UNKNOWN"
 
-            log("Unknown result - assuming FOUND and continuing...", "WARN")
-            return "FOUND"
-            
         except Exception as e:
-            log(f"Error checking account: {e}", "ERROR")
             return "ERROR"
-    
-    def step5_select_sms_option(self, phone=""):
-        """Step 5: Select SMS recovery option (NOT email)"""
-        log("Step 5: Looking for SMS option (avoiding email)...")
-        # self._handle_cookie_consent()
-        
-        time.sleep(0.5)
-        self._take_step_snapshot("STEP5_START", phone)
-        
+
+    def step5_select_sms_option(self, number):
+        """Step 5: Select SMS Option"""
+        step_name = "5_select_sms"
         try:
-            page_source = self.driver.page_source.lower()
+            # Force Navigate if not already on recovery page (Logic moved to main loop, but safe to ensure here)
+            if "recover" not in self.driver.current_url:
+                 self.driver.get("https://www.facebook.com/recover/initiate/?is_from_lara_screen=1")
+                 time.sleep(3)
             
-            # EARLY CHECK: Detect "Choose a way to log in" page (no SMS visible)
-            if "choose a way to log in" in page_source:
-                log("Detected 'Choose a way to log in' page...", "INFO")
-                
-                # First try to click "See more" to reveal more options
-                try:
-                    see_more = self.driver.find_element(By.XPATH, "//a[contains(text(), 'See more')]")
-                    if see_more:
-                        see_more.click()
-                        log("Clicked 'See more' to reveal more options...", "INFO")
-                        time.sleep(1)
-                        page_source = self.driver.page_source.lower()
-                except:
-                    pass
-                
-                # Now check if SMS option is available
-                if "sms" not in page_source and "text message" not in page_source:
-                    log("NO SMS OPTION AVAILABLE - Only email/notification/password options", "ERROR")
-                    return False, "NO_SMS_OPTION_AVAILABLE"
+            self._save_screenshot(step_name + "_start")
             
-            # PRIORITY 1: Check for "We'll send you a code" page with Continue button
-            # This is the direct SMS confirmation page - just click Continue
-            # CRITICAL: We must NOT do this if we are on the "Choose a way" selection page
-            is_selection_page = "choose a way to log in" in page_source
+            # Find SMS label
+            # Strategy: Find all labels, check text for "SMS" and last 2 digits
+            last_2 = number[-2:]
+            labels = self.driver.find_elements(By.TAG_NAME, "label")
+            sms_label = None
             
-            try:
-                if not is_selection_page and ("send you a code" in page_source or "we'll send" in page_source):
-                    log("Detected SMS confirmation page - looking for Continue button...", "INFO")
-                    continue_selectors = [
-                        (By.XPATH, "//button[contains(text(), 'Continue')]"),
-                        (By.XPATH, "//div[@role='button' and contains(text(), 'Continue')]"),
-                        (By.XPATH, "//span[contains(text(), 'Continue')]"),
-                        (By.CSS_SELECTOR, "button[type='submit']"),
-                    ]
-                    for by, selector in continue_selectors:
-                        try:
-                            btn = self.driver.find_element(by, selector)
-                            if btn and btn.is_displayed():
-                                btn.click()
-                                log("Clicked Continue on SMS confirmation page!", "OK")
-                                time.sleep(1)
-                                return True, "SMS_SELECTED_DIRECTLY"
-                        except:
-                            continue
-            except:
-                pass
-
-            # PRIORITY 2: First, check if there's a link with send_sms in href
-            try:
-                sms_link = self.driver.find_element(By.XPATH, "//a[contains(@href, 'send_sms')]")
-                if sms_link:
-                    sms_link.click()
-                    log("Clicked SMS link!", "OK")
-                    time.sleep(0.5)
-                    self._take_step_snapshot("STEP5_SMS_LINK", phone)
-                    return True, "SMS_LINK_CLICKED"
-            except:
-                pass
-            
-            # Look for radio button or option with phone/SMS text
-            sms_keywords = ['sms', 'text', 'phone', 'mobile', 'رسالة نصية', 'هاتف', 'جوال']
-            email_keywords = ['email', 'gmail', 'mail', 'بريد', 'إيميل']
-            
-            # Find all clickable elements
-            try:
-                # Look for radio buttons
-                radio_buttons = self.driver.find_elements(By.CSS_SELECTOR, "input[type='radio']")
-                for radio in radio_buttons:
-                    try:
-                        # Get parent or label text
-                        parent = radio.find_element(By.XPATH, "./..")
-                        parent_text = parent.text.lower()
-                        
-                        # EXPLICIT EXCLUSIONS - Never select these options
-                        skip_keywords = [
-                            'facebook notification', 'notification', 
-                            'password', 'كلمة المرور', 'كلمة السر',
-                            'whatsapp', 'واتساب',
-                            'email', 'بريد', 'gmail', 'mail'
-                        ]
-                        should_skip = any(kw in parent_text for kw in skip_keywords)
-                        
-                        if should_skip:
-                            log(f"Skipping option: {parent_text[:50]}...", "INFO")
-                            continue
-                        
-                        # ONLY select if it explicitly has SMS keywords
-                        is_sms = 'sms' in parent_text or 'text message' in parent_text or 'رسالة نصية' in parent_text
-                        
-                        if is_sms:
-                            # Check if it matches our phone (last 2 digits) if possible
-                            if phone and len(phone) >= 2:
-                                last_digits = phone[-2:]
-                                if last_digits in parent_text:
-                                    log(f"Matched phone digits {last_digits} in SMS option", "OK")
-                                    radio.click()
-                                    time.sleep(0.3)
-                                    return True, "SMS_RADIO_SELECTED_MATCHED"
-                            
-                            radio.click()
-                            log("Selected SMS radio button (Text Match)!", "OK")
-                            time.sleep(0.3)
-                            return True, "SMS_RADIO_SELECTED"
-                    except:
-                        continue
-                        
-                # 3. Try Exact ID Selector (New)
-                try:
-                    sms_radios = self.driver.find_elements(By.CSS_SELECTOR, "input[type='radio'][id*='send_sms']")
-                    if sms_radios:
-                        sms_radios[0].click()
-                        log("Selected SMS radio button (ID Match)!", "OK")
-                        return True, "SMS_ID_MATCH"
-                except:
-                    pass
-                    
-            except:
-                pass
-
-            
-            # Look for div or button with SMS text
-            try:
-                elements = self.driver.find_elements(By.XPATH, "//*[contains(translate(text(), 'SMS', 'sms'), 'sms') or contains(text(), 'text message') or contains(text(), 'phone')]")
-                for elem in elements:
-                    elem_text = elem.text.lower()
-                    is_email = any(kw in elem_text for kw in email_keywords)
-                    is_whatsapp = 'whatsapp' in elem_text or 'واتساب' in elem_text
-                    
-                    if not is_email and not is_whatsapp:
-                        elem.click()
-                        log("Clicked SMS option!", "OK")
-                        time.sleep(0.3)
-                        return True, "SMS_TEXT_MATCH"
-            except:
-                pass
-            
-            # Look specifically for phone number pattern in options
-            try:
-                # Find elements that contain phone number format (like +20...)
-                phone_elements = self.driver.find_elements(By.XPATH, "//*[contains(text(), '+') and not(contains(text(), '@'))]")
-                for elem in phone_elements:
-                    if '@' not in elem.text:  # Make sure it's not email
-                        try:
-                            elem.click()
-                            log("Clicked phone number option!", "OK")
-                            time.sleep(0.3)
-                            return True, "PHONE_NUMBER_MATCH"
-                        except:
-                            continue
-            except:
-                pass
-            
-            # CHECK: If page shows "Choose a way to log in" but no SMS found
-            page_source = self.driver.page_source.lower()
-            no_sms_indicators = [
-                "choose a way to log in",
-                "get code via facebook notification",
-                "get code or link via email",
-                "enter password to log in",
-            ]
-            
-            has_login_options = any(ind in page_source for ind in no_sms_indicators)
-            
-            if has_login_options:
-                # Check if SMS is available
-                sms_available = "sms" in page_source or "text message" in page_source
-                if not sms_available:
-                    log("NO SMS OPTION AVAILABLE - Only email/notification/password options found", "ERROR")
-                    return False, "NO_SMS_OPTION_VISIBLE"
-            
-            log("Could not find specific SMS option - may need manual selection", "WARN")
-            return False, "SMS_OPTION_NOT_FOUND"
-            
-        except Exception as e:
-            log(f"Error searching number: {e}", "ERROR")
-            self._save_failure_snapshot("step5_error")
-            return False, f"STEP5_ERROR: {str(e)}"
-    
-    def step6_send_code(self):
-        """Step 6: Click send code / continue button"""
-        log("Step 6: Clicking 'Continue' / 'Send Code'...")
-        self._take_step_snapshot("STEP6_START")
-        
-        try:
-            # PRIORITY: Try Continue button first with JS fallback
-            continue_selectors = [
-                (By.XPATH, "//button[contains(text(), 'Continue')]"),
-                (By.XPATH, "//div[@role='button' and contains(text(), 'Continue')]"),
-                (By.XPATH, "//span[contains(text(), 'Continue')]"),
-                (By.CSS_SELECTOR, "button[type='submit']"),
-                (By.XPATH, "//button[contains(text(), 'Send')]"),
-                (By.XPATH, "//button[contains(text(), 'متابعة')]"),
-                (By.XPATH, "//button[contains(text(), 'إرسال')]"),
-                (By.CSS_SELECTOR, "[data-testid='recover_nonce_next_button']"),
-                (By.CSS_SELECTOR, "[role='button']"),
-            ]
-            
-            clicked = False
-            for by, selector in continue_selectors:
-                try:
-                    buttons = self.driver.find_elements(by, selector)
-                    for button in buttons:
-                        try:
-                            if button.is_displayed() and button.is_enabled():
-                                # Try standard click first
-                                try:
-                                    button.click()
-                                    log(f"Clicked button (Standard): {selector}", "OK")
-                                    clicked = True
-                                except Exception as click_err:
-                                    # Fallback to JS click
-                                    self.driver.execute_script("arguments[0].click();", button)
-                                    log(f"Clicked button (JS): {selector}", "OK")
-                                    clicked = True
-                                
-                                if clicked:
-                                    time.sleep(2)  # Wait for page to respond
-                                    break
-                        except:
-                            continue
-                    if clicked:
-                        break
-                except:
-                    continue
-            
-            if not clicked:
-                log("Could not click any button!", "WARN")
-                return False, "BUTTON_CLICK_FAILED"
-            
-            # Wait and verify code was sent
-            # INCREASED WAIT: Mobile pages load slowly
-            time.sleep(5)
-            page_source = self.driver.page_source.lower()
-            current_url = self.driver.current_url.lower()
-            
-            # FAIL CHECK: Did we send an email instead of SMS?
-            # Refined check: Only fail if "email" is explicitly mentioned in a "sent" context
-            # AND "sms" is NOT mentioned (to avoid mixed messages)
-            if ("sent a code to your email" in page_source or "via email" in page_source) and "sms" not in page_source:
-                 # Double check elements for email pattern
-                 if self.driver.find_elements(By.XPATH, "//*[contains(text(), '@')]"):
-                     log("FAILED: Code sent to EMAIL, not SMS!", "ERROR")
-                     return False, "FAILED_EMAIL_SENT"
-
-            # SUCCESS CHECK FIRST: Robust Element Detection
-            try:
-                # 1. Check for Header "Confirm your account"
-                confirm_headers = self.driver.find_elements(By.XPATH, "//*[contains(text(), 'Confirm your account')]")
-                if confirm_headers:
-                     log("*** OTP CODE SENT! (Found 'Confirm your account' header) ***", "SUCCESS")
-                     return True, "OTP_SENT_HEADER_FOUND"
-
-                # 2. Check for "Enter code" input field (by placeholder or structure)
-                otp_inputs = self.driver.find_elements(By.CSS_SELECTOR, "input[placeholder*='code'], input[placeholder*='Code'], input[name='n'], input[type='number']")
-                if otp_inputs:
-                     # Verify it's not a search/phone input
-                     for inp in otp_inputs:
-                         if "phone" not in inp.get_attribute("placeholder").lower() and "email" not in inp.get_attribute("placeholder").lower():
-                             log("*** OTP CODE SENT! (Found OTP input field) ***", "SUCCESS")
-                             return True, "OTP_SENT_INPUT_FOUND"
-            except Exception as e:
-                log(f"Error in element check: {e}", "WARN")
-
-            # FAIL CHECK: Captcha / Security Check
-            # Only fail if we are SURE it's a captcha (visual check preferred)
-            captcha_keywords = ["enter these letters", "security check", "recaptcha"]
-            found_captcha = False
-            for kw in captcha_keywords:
-                if kw in page_source:
-                    found_captcha = True
+            for label in labels:
+                text = label.text.lower()
+                # Check for "sms" OR "رسالة" AND digits match
+                if ("sms" in text or "رسالة" in text) and (last_2 in text):
+                    sms_label = label
                     break
             
-            if found_captcha:
-                # Double check: Is it actually visible?
-                log("Potential Captcha detected in source - verifying visibility...", "WARN")
+            # Fallback: Just look for SMS if digits fail (maybe hidden)
+            if not sms_label:
+                 for label in labels:
+                    if "sms" in label.text.lower() or "رسالة" in label.text:
+                        sms_label = label
+                        break
+            
+            if not sms_label:
+                log("❌ SMS Option NOT FOUND", "WARN")
+                return False, "SMS_NOT_FOUND"
                 
-                # Dump snippet to log for debugging (since we are on Heroku)
-                snippet_start = max(0, page_source.find(kw) - 100)
-                snippet_end = min(len(page_source), snippet_start + 300)
-                snippet = page_source[snippet_start:snippet_end]
-                log(f"CAPTCHA SOURCE SNIPPET: ...{snippet}...", "WARN")
-                
-                log("FAILED: Captcha/Security Check confirmed!", "ERROR")
-                return False, "FAILED_CAPTCHA_REQUIRED"
+            log(f"✅ Found SMS Option: {sms_label.text}")
+            sms_label.click()
+            time.sleep(1)
+            
+            # Click Continue
+            # Desktop: Usually <button type="submit">Continue</button>
+            # Arabic: "متابعة"
+            continue_btns = self.driver.find_elements(By.CSS_SELECTOR, "button[type='submit']")
+            clicked_cont = False
+            for btn in continue_btns:
+                if btn.is_displayed():
+                    btn.click()
+                    clicked_cont = True
+                    break
+            
+            if not clicked_cont:
+                # Try by text
+                buttons = self.driver.find_elements(By.TAG_NAME, "button")
+                for btn in buttons:
+                     if "continue" in btn.text.lower() or "متابعة" in btn.text:
+                         btn.click()
+                         clicked_cont = True
+                         break
+            
+            if not clicked_cont:
+                log("❌ Continue button not found", "ERROR")
+                return False, "CONTINUE_BTN_MISSING"
 
-            success_indicators = [
-                "enter code",
-                "we sent",
-                "code sent",
-                "check your phone",
-                "enter the code",
-                "أدخل الرمز",
-                "تم الإرسال",
-                "confirm your account",
+            time.sleep(3)
+            self._save_screenshot(step_name + "_success")
+            return True, "OK"
+
+        except Exception as e:
+            self._handle_failure(step_name)
+            return False, str(e)
+
+    def step6_send_code(self):
+        """Step 6: Verify Success"""
+        step_name = "6_verify_send"
+        try:
+            url = self.driver.current_url
+            page_text = self.driver.find_element(By.TAG_NAME, "body").text.lower()
+            
+            self._save_screenshot(step_name)
+            
+            # Success indicators
+            success_keywords = [
+                "enter code", "أدخل الرمز", 
+                "we sent", "تم الإرسال", 
+                "check your phone", 
+                "confirm your account"
             ]
             
-            for indicator in success_indicators:
-                if indicator in page_source:
-                    log("*** OTP CODE SENT SUCCESSFULLY! ***", "SUCCESS")
-                    return True, "OTP_SENT_SUCCESS"
+            is_success = False
+            if "enter_code" in url or "recover/code" in url:
+                is_success = True
+            else:
+                for kw in success_keywords:
+                    if kw in page_text:
+                        is_success = True
+                        break
             
-            if "code" in current_url:
-                log("*** OTP CODE SENT! ***", "SUCCESS")
-                return True, "OTP_SENT_URL_MATCH"
-            
-            # If we clicked but can't confirm, still return True but warn
-            log("Button clicked - Code may have been sent - check phone!", "OK")
-            return True, "OTP_POSSIBLY_SENT"
-            
+            if is_success:
+                 log("🎉 OTP SUCCESS!", "SUCCESS")
+                 return True, "SENT"
+            else:
+                 log(f"⚠️ Unsure of success. URL: {url}", "WARN")
+                 # Check for captcha
+                 if "security check" in page_text or "enter the text" in page_text:
+                     return False, "CAPTCHA"
+                 return True, "POSSIBLE_SUCCESS" # Assume good if no error
+                 
         except Exception as e:
-            log(f"Error sending code: {e}", "ERROR")
-            return False, f"STEP6_ERROR: {str(e)}"
+            return False, str(e)
+
     
     def send_otp(self, phone):
-        """Main function: Send OTP to phone - 3-STEP FLOW"""
+        """Main function: Send OTP to phone - Desktop Flow"""
         original_phone = phone
         phone = format_phone(phone)
         
         print(f"\n{'='*60}")
-        print(f"{C.BOLD}{C.CYAN}   Facebook OTP - {phone}{C.END}")
+        print(f"{C.BOLD}{C.CYAN}   Facebook OTP (Desktop) - {phone}{C.END}")
         print("="*60)
         
         result = {"phone": phone, "status": "ERROR", "message": "Unknown error", "last_url": ""}
@@ -1261,8 +744,6 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
             if not self._setup_driver():
                 result["message"] = "Failed to setup browser"
                 return result
-            
-
             
             # LOOP for Multiple Accounts (Default 1 pass)
             max_accounts_to_process = 5
@@ -1276,68 +757,53 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
                     log(f"--- Processing Account #{accounts_processed + 1} ---", "INFO")
                     time.sleep(2)
                 
-                # ========== STEP 1: Open identify page and search ==========
+                # ========== STEP 1: Open identify page ==========
                 if not self.step1_open_recovery_page():
                     result["message"] = "Failed to open recovery page"
-                    self._take_step_snapshot("1_OpenFail", phone)
                     break # Critical failure
-                self._take_step_snapshot("1_Opened", phone)
                 
-                # Enter phone
-                self._take_step_snapshot("2_BeforePhone", phone)
+                # ========== STEP 2: Enter phone ==========
                 if not self.step2_enter_phone(phone):
                     result["message"] = "Failed to enter phone"
-                    self._take_step_snapshot("2_PhoneFail", phone)
                     break
-                self._take_step_snapshot("2_AfterPhone", phone)
                 
-                # Search
-                self._take_step_snapshot("3_BeforeSearch", phone)
+                # ========== STEP 3: Search ==========
                 if not self.step3_click_search():
                     result["message"] = "Failed to click search"
-                    self._take_step_snapshot("3_SearchFail", phone)
                     break
-                self._take_step_snapshot("3_AfterSearch", phone) # step3 has its own snapshot now
                     
-                # Check Result
-                self._take_step_snapshot("4_BeforeChekResult", phone)
+                # ========== STEP 4: Check Result ==========
                 status = self.step4_check_account_found()
-                
-                # Check 2: Try a quick snapshot of the result immediately
-                self._take_step_snapshot(f"4_ResultState_{status}", phone)
+                self._take_step_snapshot(f"4_Result_{status}", phone)
                 
                 if status == "NOT_FOUND":
                     log("Account NOT FOUND (Final)", "WARN")
                     result["status"] = "NOT_FOUND"
-                    result["message"] = "Number not linked to any Facebook account"
-                    # Capture debug
-                    self._save_failure_snapshot("not_found_final")
                     break
                 
                 elif status == "TRY_ANOTHER_WAY":
                     log("Redirected to Login - Clicking 'Try Another Way'...", "INFO")
                     try:
                         # Click the button
-                        btn = self.driver.find_element(By.CSS_SELECTOR, "a[href*='/recover/initiate/?is_from_lara_screen=1']")
-                        btn.click()
+                        # Often the link is essentially /recover/initiate
+                        self.driver.get("https://www.facebook.com/recover/initiate/?is_from_lara_screen=1")
                         time.sleep(5)
                         # Verify we are now on recovery page
                         if "recover" in self.driver.current_url or "reset" in self.driver.current_url:
                              status = "FOUND" # Proceed to next steps
                         else:
-                             log("Failed to navigate to recovery after clicking button", "ERROR")
+                             log("Failed to navigate to recovery after redirect", "ERROR")
                              break
                     except Exception as e:
                         log(f"Error processing Try Another Way: {e}", "ERROR")
                         break
-
-                if status == "MULTIPLE_ACCOUNTS":
+                        
+                elif status == "MULTIPLE_ACCOUNTS":
                     log("Multiple accounts detected!", "INFO")
-                    # Find all "This is me" buttons
                     try:
-                        buttons = self.driver.find_elements(By.CSS_SELECTOR, "a[role='button']")
-                        # Filter for "This is me" buttons if possible, or just take non-cancel ones
-                        # The text usually "This is my account"
+                        # Find all "This is me" buttons
+                        buttons = self.driver.find_elements(By.XPATH, "//a[@role='button']")
+                        
                         valid_buttons = []
                         for b in buttons:
                              if "account" in b.text.lower() or "هذا إيميل" in b.text or "حسابي" in b.text:
@@ -1356,7 +822,11 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
                             log(f"Selecting account #{accounts_processed + 1}...", "INFO")
                             target_btn.click()
                             time.sleep(5)
-                            # Now we continue to Step 5...
+                            
+                            # Force navigate to recovery initiate just in case
+                            self.driver.get("https://www.facebook.com/recover/initiate/?is_from_lara_screen=1")
+                            time.sleep(3)
+                            
                         except Exception as e:
                             log(f"Error identifying account button: {e}", "ERROR")
                             break
@@ -1366,303 +836,104 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
                         break
                 elif status == "FOUND":
                     if accounts_processed > 0:
-                        # We are looping but status is just FOUND?
-                        # This implies we might have lost the multi-account state or it was a single account
                          break # Stop looping if we only found one
                 else:
-                    break
+                    break # Unknown status
 
 
-                # ========== STEP 5 & 6: Recover ==========
-                # Step 5: Select SMS
-                self._take_step_snapshot("5_BeforeSMS", phone)
+                # ========== STEP 5: Select SMS ==========
                 success, reason = self.step5_select_sms_option(phone)
-                if success:
-                    self._take_step_snapshot("5_AfterSMS", phone)
-                    
-                    # Step 6: Send Code
-                    self._take_step_snapshot("6_BeforeSend", phone)
-                    self._take_step_snapshot("6_BeforeSend", phone)
-                    success_6, reason_6 = self.step6_send_code()
-                    if success_6:
-                        result["status"] = "OTP_SENT"
-                        result["message"] = f"OTP Sent to account #{accounts_processed + 1}"
-                        result["otp_url"] = self.driver.current_url  # Capture final URL for OTP entry
-                        result["last_url"] = self.driver.current_url
-                        
-                        # Send success snapshot with OTP URL in caption
-                        otp_caption = f"✅ OTP SENT | {phone}\n🔗 OTP URL:\n{result['otp_url']}"
-                        try:
-                            timestamp = int(time.time())
-                            filename = f"snap_6_SendSuccess_{timestamp}.png"
-                            self.driver.save_screenshot(filename)
-                            self.send_telegram_photo(otp_caption, filename)
-                        except Exception as e:
-                            log(f"Snapshot error: {e}", "WARN")
-                        
-                        log(f"OTP Sent for Account {accounts_processed + 1} ({reason_6})", "SUCCESS")
-                        log(f"OTP URL: {result['otp_url']}", "INFO")
-                    else:
-                        result["message"] = reason_6
-                        # Sanitize reason for filename
-                        safe_reason_6 = "".join(c for c in reason_6 if c.isalnum() or c in ('_', '-'))[:25]
-                        self._take_step_snapshot(f"FAILED_{safe_reason_6}", phone)
-                        log(f"Failed to send code: {reason_6}", "ERROR")
-                else:
-                    result["message"] = reason
-                    # Use the specific failure reason for the snapshot name to show in Telegram
-                    # 'reason' will be like NO_SMS_OPTION_VISIBLE or SMS_OPTION_NOT_FOUND
-                    # We sanitize it for filename
-                    safe_reason = "".join(c for c in reason if c.isalnum() or c in ('_', '-'))[:25]
-                    self._take_step_snapshot(f"FAILED_{safe_reason}", phone)
-                    log(f"Could not find SMS option for Account {accounts_processed + 1} ({reason})", "WARN")
+                if not success:
+                    log(f"Failed to select SMS: {reason}", "WARN")
+                    accounts_processed += 1
+                    continue # Try next account if any
 
+                # ========== STEP 6: Verify Sent ==========
+                success_6, reason_6 = self.step6_send_code()
+                if success_6:
+                    result["status"] = "OTP_SENT"
+                    result["message"] = f"OTP Sent to account #{accounts_processed + 1}"
+                    result["otp_url"] = self.driver.current_url
+                    result["last_url"] = self.driver.current_url
+                    
+                    # Send success snapshot
+                    otp_caption = f"✅ OTP SENT | {phone}\n🔗 OTP URL:\n{result['otp_url']}"
+                    try:
+                        timestamp = int(time.time())
+                        filename = f"snap_6_SendSuccess_{timestamp}.png"
+                        self.driver.save_screenshot(filename)
+                        self.send_telegram_photo(otp_caption, filename)
+                    except: pass
+                    
+                    break # SUCCESS! Stop looking
+                else:
+                    log(f"Failed to verify send: {reason_6}", "WARN")
+                
                 accounts_processed += 1
                 
-                # Check if we should loop again (only if valid multiple accounts were found prev)
-                # If we were in single account mode, break
-                if status == "FOUND" or status == "TRY_ANOTHER_WAY":
-                    break
-            
-            # Final result check
-            if result["status"] == "OTP_SENT":
-                 return result
-            elif result["status"] == "NOT_FOUND":
-                 return result
-            else:
-                 result["status"] = "FAILED"
-                 return result
-
-        except Exception as e:
-            log(f"Error: {e}", "ERROR")
-            result["message"] = str(e)
-            return result
+            # END LOOP
             
         except Exception as e:
-            log(f"Error: {e}", "ERROR")
+            log(f"CRITICAL ERROR: {e}", "ERROR")
             result["message"] = str(e)
-            return result
             
         finally:
-            # STOP RECORDING AND SEND VIDEO
-            try:
-                if 'recorder' in locals() and recorder and VIDEO_AVAILABLE:
-                    recorder.stop()
-                    log("Stopped video recording.", "INFO")
-                    
-                    if os.path.exists(video_file):
-                        caption = f"Process Video | {phone} | Status: {result['status']}"
-                        self.send_telegram_video(caption, video_file)
-                    else:
-                        log("Video file not generated (using fallback stats).", "WARN")
-                
-                # Fallback: If no video, try sending a photo dump if one exists
-                # (You may want to re-implement screenshot logic here if video is critical, 
-                # but currently we rely on video. If it fails, we assume no visual sent)
-                if not VIDEO_AVAILABLE and not self.snapshot_taken:
-                     log("No previous snapshot sent. Sending final state screenshot.", "INFO")
-                     if self.driver:
-                         self.driver.save_screenshot("debug_final_fallback.png")
-                         self.send_telegram_photo(f"Final State ({phone})", "debug_final_fallback.png")
-
-            except Exception as e:
-                log(f"Error handling video/media: {e}", "WARN")
-
             self._close_driver()
+            
+        return result
 
+
+
+# ==========================================
+# Batch Processing Logic
+# ==========================================
 
 def format_phone(phone):
-    """Format phone number"""
-    phone = re.sub(r'[\s\-\(\)]', '', phone)
-    if not phone.startswith('+'):
-        phone = '+' + phone
-    return phone
+    """Clean phone number"""
+    return re.sub(r'[^\d+]', '', phone).strip()
 
-
-def process_single_phone(phone, headless, stats, proxy_manager=None):
-    """Process a single phone number (used for parallel processing)"""
-    try:
-        phone = format_phone(phone)
-        browser = FacebookOTPBrowser(headless=headless, proxy_manager=proxy_manager)
-        result = browser.send_otp(phone)
-        if result and "status" in result:
-            stats.update(result["status"])
-        else:
-            stats.update("ERROR")
-            result = {"phone": phone, "status": "ERROR", "message": "None result returned"}
-        return result
-    except Exception as e:
-        log(f"Process error for {phone}: {e}", "ERROR")
-        return {"phone": phone, "status": "ERROR", "message": str(e)}
-
-
-def process_batch(filename, headless=False, parallel=False, workers=3, proxy_file=None):
-    """Process multiple phone numbers from file
+def process_batch(numbers, headless=True, max_workers=1):
+    """Process a list of numbers"""
+    stats = Stats(len(numbers))
+    results = []
     
-    Args:
-        filename: Path to file with phone numbers
-        headless: Run without visible browser
-        parallel: Use parallel processing (only in headless mode)
-        workers: Number of parallel workers (default 3)
-        proxy_file: Path to file with proxies (optional)
-    """
-    # Load proxies if file provided
-    proxy_manager = None
-    if proxy_file:
-        proxy_manager = ProxyManager(proxy_file)
-    try:
-        with open(filename, 'r') as f:
-            phones = [line.strip() for line in f if line.strip()]
+    print(f"\n{C.B}Starting batch process for {len(numbers)} numbers...{C.END}")
+    
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        future_to_phone = {
+            executor.submit(FacebookOTPBrowser(headless=headless).send_otp, phone): phone 
+            for phone in numbers
+        }
         
-        total = len(phones)
-        stats = Stats(total)
-        results = []
-        
-        print(f"\n{C.BOLD}{C.CYAN}╔══════════════════════════════════════════════════════════╗{C.END}")
-        print(f"{C.BOLD}{C.CYAN}║{C.END}           🚀 STARTING BATCH PROCESSING                    {C.BOLD}{C.CYAN}║{C.END}")
-        print(f"{C.BOLD}{C.CYAN}╠══════════════════════════════════════════════════════════╣{C.END}")
-        print(f"{C.BOLD}{C.CYAN}║{C.END}  📁 File: {filename:<45} {C.BOLD}{C.CYAN}║{C.END}")
-        print(f"{C.BOLD}{C.CYAN}║{C.END}  📱 Numbers: {total:<42} {C.BOLD}{C.CYAN}║{C.END}")
-        print(f"{C.BOLD}{C.CYAN}║{C.END}  🖥️  Mode: {'HEADLESS (No Browser)' if headless else 'VISIBLE (With Browser)':<38} {C.BOLD}{C.CYAN}║{C.END}")
-        print(f"{C.BOLD}{C.CYAN}║{C.END}  ⚡ Parallel: {'YES (' + str(workers) + ' workers)' if parallel else 'NO (Sequential)':<40} {C.BOLD}{C.CYAN}║{C.END}")
-        print(f"{C.BOLD}{C.CYAN}╚══════════════════════════════════════════════════════════╝{C.END}\n")
-        
-        start_time = time.time()
-        
-        if parallel and headless:
-            # Parallel processing with ThreadPoolExecutor
-            log(f"Starting parallel processing with {workers} workers...", "INFO")
-            
-            with ThreadPoolExecutor(max_workers=workers) as executor:
-                futures = {executor.submit(process_single_phone, phone, headless, stats, proxy_manager): phone for phone in phones}
-                
-                for future in as_completed(futures):
-                    phone = futures[future]
-                    try:
-                        result = future.result()
-                        results.append(result)
-                        # Show live stats after each completion
-                        stats.display()
-                    except Exception as e:
-                        log(f"Error processing {phone}: {e}", "ERROR")
-                        stats.update("ERROR")
-                        results.append({"phone": phone, "status": "ERROR", "message": str(e)})
-        else:
-            # Sequential processing
-            for i, phone in enumerate(phones, 1):
-                print(f"\n{'='*60}")
-                print(f"   Processing {i}/{total}: {phone}")
-                print('='*60)
-                
-                result = process_single_phone(phone, headless, stats, proxy_manager)
-                results.append(result)
-                
-                # Show live stats
+        for future in as_completed(future_to_phone):
+            phone = future_to_phone[future]
+            try:
+                res = future.result()
+                stats.update(res["status"])
                 stats.display()
-                
-                # No delay between requests in sequential mode
-                pass
-        
-        elapsed = time.time() - start_time
-        
-        # Final Summary
-        print(f"\n{C.BOLD}{C.G}╔══════════════════════════════════════════════════════════╗{C.END}")
-        print(f"{C.BOLD}{C.G}║{C.END}              ✅ BATCH PROCESSING COMPLETE!                {C.BOLD}{C.G}║{C.END}")
-        print(f"{C.BOLD}{C.G}╠══════════════════════════════════════════════════════════╣{C.END}")
-        print(f"{C.BOLD}{C.G}║{C.END}  📱 Total Numbers:     {total:<10}                     {C.BOLD}{C.G}║{C.END}")
-        print(f"{C.BOLD}{C.G}║{C.END}  ✓ Success (OTP Sent): {C.BOLD}{stats.success}{C.END:<10}                     {C.BOLD}{C.G}║{C.END}")
-        print(f"{C.BOLD}{C.G}║{C.END}  ⚠ Not Found:          {stats.not_found:<10}                     {C.BOLD}{C.G}║{C.END}")
-        print(f"{C.BOLD}{C.G}║{C.END}  ✗ Failed/Errors:      {stats.failed:<10}                     {C.BOLD}{C.G}║{C.END}")
-        print(f"{C.BOLD}{C.G}║{C.END}  ⏱️  Time Elapsed:       {elapsed:.1f}s                           {C.BOLD}{C.G}║{C.END}")
-        print(f"{C.BOLD}{C.G}╚══════════════════════════════════════════════════════════╝{C.END}\n")
-        
-        return results
-        
-    except FileNotFoundError:
-        log(f"File not found: {filename}", "ERROR")
-        return None
-
-
-def main():
-    print(f"""
-{C.BOLD}{C.CYAN}╔════════════════════════════════════════════════════════════╗
-║         Facebook OTP Browser Automation                     ║
-║         Uses Real Browser - More Reliable!                  ║
-║         Now with Proxy Support!                             ║
-║                                                             ║
-║         Designed by: Doctor Kayf (@Doc_kayf)                ║
-╚════════════════════════════════════════════════════════════╝{C.END}
-""")
-    print("DEBUG: Inside main", flush=True)
-    # Check for flags
-    headless = "--headless" in sys.argv
-    parallel = "--parallel" in sys.argv
+                results.append(res)
+            except Exception as exc:
+                print(f'{phone} generated an exception: {exc}')
+                stats.update("ERROR")
     
-    # Check for proxy file
-    proxy_file = None
-    for i, arg in enumerate(sys.argv):
-        if arg == "--proxy" and i + 1 < len(sys.argv):
-            proxy_file = sys.argv[i + 1]
-            break
+    return results
+
+if __name__ == "__main__":
+    if len(sys.argv) < 2:
+        print(__doc__)
+        sys.exit(1)
     
-    # Filter out flags and their values
-    args = []
-    skip_next = False
-    for i, a in enumerate(sys.argv[1:]):
-        if skip_next:
-            skip_next = False
-            continue
-        if a == "--proxy":
-            skip_next = True
-            continue
-        if a not in ["--headless", "--parallel"]:
-            args.append(a)
+    arg = sys.argv[1]
     
-    if len(args) < 1:
-        print(f"""
-{C.Y}Usage:{C.END}
-    python fb_otp_browser.py <phone_number>
-    python fb_otp_browser.py <file.txt>
-    python fb_otp_browser.py <phone_number> --headless
-    python fb_otp_browser.py <file.txt> --headless --parallel
-    python fb_otp_browser.py <file.txt> --proxy proxies.txt
-
-{C.Y}Options:{C.END}
-    --headless     Run without visible browser
-    --parallel     Process multiple numbers in parallel (headless only)
-    --proxy FILE   Use proxies from file (rotates for each number)
-
-{C.Y}Examples:{C.END}
-    python fb_otp_browser.py +201234567890
-    python fb_otp_browser.py numbers.txt --proxy proxies.txt
-    python fb_otp_browser.py numbers.txt --headless --parallel --proxy proxies.txt  {C.G}(FAST!){C.END}
-
-{C.Y}Proxy File Format:{C.END}
-    # Each line: host:port:username:password (or just host:port for no auth)
-    unblock.oxylabs.io:60000:user:pass
-    1.2.3.4:8080
-""")
-        phone = input("Enter phone number: ").strip()
-        if not phone:
-            return
+    # Check if arg is a file
+    if os.path.isfile(arg):
+        with open(arg, 'r') as f:
+            numbers = [line.strip() for line in f if line.strip()]
+        if not numbers:
+            print("File is empty!")
+            sys.exit(1)
+        process_batch(numbers, headless=True, max_workers=1)
     else:
-        phone = args[0]
-    
-    # Show proxy status
-    if proxy_file:
-        print(f"{C.B}[INFO] Proxy file: {proxy_file}{C.END}")
-    
-    # Check if file (batch mode)
-    if phone.endswith('.txt'):
-        process_batch(phone, headless=headless, parallel=parallel, proxy_file=proxy_file)
-    else:
-        phone = format_phone(phone)
-        proxy_manager = ProxyManager(proxy_file) if proxy_file else None
-        browser = FacebookOTPBrowser(headless=headless, proxy_manager=proxy_manager)
-        result = browser.send_otp(phone)
-        print(f"\nResult: {result}")
-        print(f"FINAL_STATUS_MSG: {result.get('message', 'Unknown Error')}")
-
-
-if __name__ == '__main__':
-    main()
+        # Single number
+        browser = FacebookOTPBrowser(headless=False) # Visual mode for single test
+        browser.send_otp(arg)
