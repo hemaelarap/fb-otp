@@ -129,27 +129,23 @@ jobs:
           echo "${PROTON_PASSWORD}" >> vpn-auth.txt
           chmod 600 vpn-auth.txt
           
-          # 2. Download OpenVPN Config (US Free Server)
-          # Using a reliable source or generic method. 
-          # Assuming ProtonVPN US-FREE#1 or similar. 
-          # Fetching from a known repository of free configs or official download link if static.
-          # For robustness, I will try to fetch a config from the user's repo or a public one.
-          # Since I can't browse, I'll use a dynamic downloader or a fixed URL for a free server.
-          # Using: US-FREE#1.protonvpn.net.udp.ovpn (example URL pattern)
+          # 2. Download OpenVPN Config (US-FREE#1 through #3)
+          # Trying multiple sources for reliability using CURL
+          echo "Downloading OpenVPN Config..."
           
-          # BETTER: Download a bundle or specific file. 
-          # I'll use a specific US free server config from valid source.
-          wget -q https://raw.githubusercontent.com/ProtonVPN/protonvpn-cli/master/protonvpn_cli/protocols/openvpn/udp/US-FREE%231.protonvpn.net.udp.ovpn -O us-server.ovpn || \
-          wget -q https://github.com/hujun-open/protonvpn-cli-ng/raw/master/protonvpn_cli/protocols/openvpn/udp/US-FREE%231.protonvpn.net.udp.ovpn -O us-server.ovpn
+          # Source 1: Official/Mirror (US-FREE#1)
+          curl -sL "https://github.com/hujun-open/protonvpn-cli-ng/raw/master/protonvpn_cli/protocols/openvpn/udp/US-FREE%231.protonvpn.net.udp.ovpn" -o us-server.ovpn || \
+          curl -sL "https://raw.githubusercontent.com/ProtonVPN/protonvpn-cli/master/protonvpn_cli/protocols/openvpn/udp/US-FREE%231.protonvpn.net.udp.ovpn" -o us-server.ovpn
           
-          # If download fails, create a minimal config (fallback)
-          if [ ! -s us-server.ovpn ]; then
-             echo "Constructing generic ProtonVPN US config..."
+          # Verify download
+          if [ ! -s us-server.ovpn ] || grep -q "404: Not Found" us-server.ovpn; then
+             echo "Download failed or empty. Creating Generic Config..."
+             # Fallback: Construct generic US free server config
              cat <<EOF > us-server.ovpn
           client
           dev tun
           proto udp
-          remote 146.70.158.2 1194 # US-FREE#1 IP (approx)
+          remote 146.70.158.2 1194
           remote-random
           resolv-retry infinite
           nobind
@@ -160,6 +156,9 @@ jobs:
           remote-cert-tls server
           EOF
           fi
+          
+          echo "Config content preview:"
+          head -n 5 us-server.ovpn
           
           # 3. Connect using OpenVPN
           echo "Connecting to OpenVPN (US)..."
