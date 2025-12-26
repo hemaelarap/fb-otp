@@ -548,6 +548,39 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
     # NEW DESKTOP OTP FLOW STEPS
     # ==========================================
 
+    def _handle_cookie_consent(self):
+        """Handle cookie consent popup if it appears"""
+        try:
+            # Wait briefly for cookie dialog
+            time.sleep(3)
+            
+            # Try to find and click "Allow all cookies" button
+            cookie_selectors = [
+                (By.XPATH, "//button[contains(text(), 'Allow all cookies')]"),
+                (By.XPATH, "//button[contains(text(), 'السماح بجميع ملفات تعريف الارتباط')]"),
+                (By.XPATH, "//button[contains(text(), 'Accept All')]"),
+                (By.XPATH, "//button[contains(text(), 'Accept all')]"),
+                (By.XPATH, "//button[@data-cookiebanner='accept_button']"),
+                (By.CSS_SELECTOR, "button[data-testid='cookie-policy-manage-dialog-accept-button']"),
+            ]
+            
+            for by, selector in cookie_selectors:
+                try:
+                    btn = self.driver.find_element(by, selector)
+                    if btn and btn.is_displayed():
+                        btn.click()
+                        log("Cookie consent accepted!", "OK")
+                        time.sleep(1)
+                        return True
+                except:
+                    continue
+            
+            log("No cookie consent dialog found", "INFO")
+            return False
+        except Exception as e:
+            log(f"Cookie consent check error: {e}", "WARN")
+            return False
+
     def step1_open_recovery_page(self):
         """Step 1: Open Facebook Identify Page (Desktop)"""
         step_name = "1_open_identify"
@@ -556,6 +589,10 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
             self.driver.get('https://www.facebook.com/login/identify/?ctx=recover&from_login_screen=0')
             self._save_screenshot(step_name)
             self.random_sleep(2, 4)
+            
+            # Check for cookie consent dialog
+            self._handle_cookie_consent()
+            
             self.simulate_human_behavior()
             return True
         except Exception as e:
