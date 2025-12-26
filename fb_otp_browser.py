@@ -831,23 +831,9 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
             except Exception as e:
                 log(f"Check for 'Try another way' failed (non-critical): {e}", "WARN")
 
-            # Find SMS label
-            # Strategy: Find all labels, check text for "SMS" and last 2 digits
-            # PRIORITY 1: Check for "We'll send you a code" page (Direct Confirmation)
-            # If we see this, the option is already selected, just click Continue
-            if "send you a code" in page_source or "we'll send" in page_source:
-                 log("Detected SMS confirmation page - looking for Continue button...", "INFO")
-                 # We can piggyback on the continue click logic at the end, or do it here.
-                 # Let's set a flag to skip finding the label
-                 found_sms_option = True
-                 log("SMS Confirmation Page detected - proceeding to Continue click", "OK")
-            else:
-                 found_sms_option = False
-
             # USER REQUEST: Assume SMS option is selected by default and just click Continue.
-            # We will try a quick "best effort" check but won't fail if we don't find it.
-            
-            log("User Directive: Assuming SMS option is pre-selected. Skipping strict search.", "INFO")
+            # Skip all searching logic - the radio is pre-selected per user feedback.
+            log("Assuming SMS option is pre-selected (User Directive). Proceeding to Continue...", "INFO")
              
             # Optional: Quick check just to log what we see (non-blocking)
             try:
@@ -858,9 +844,7 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
                          break
             except: pass
 
-            found_sms_option = True # FORCE SUCCESS for this part
-            
-            # (Old search logic removed/bypassed to satisfy "Cancel this choice" request)
+            found_sms_option = True # FORCE SUCCESS - don't fail here
                 
             time.sleep(0.5)
             
