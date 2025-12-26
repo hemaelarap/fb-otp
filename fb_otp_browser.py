@@ -552,25 +552,42 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
         """Handle cookie consent popup if it appears"""
         try:
             # Wait briefly for cookie dialog
-            time.sleep(3)
+            time.sleep(2)
             
             # Try to find and click "Allow all cookies" button
+            # We use contains(., 'text') to match text inside nested spans/divs
             cookie_selectors = [
-                (By.XPATH, "//button[contains(text(), 'Allow all cookies')]"),
-                (By.XPATH, "//button[contains(text(), 'السماح بجميع ملفات تعريف الارتباط')]"),
-                (By.XPATH, "//button[contains(text(), 'Accept All')]"),
-                (By.XPATH, "//button[contains(text(), 'Accept all')]"),
-                (By.XPATH, "//button[@data-cookiebanner='accept_button']"),
+                # English variations
+                (By.XPATH, "//button[contains(., 'Allow all cookies')]"),
+                (By.XPATH, "//span[contains(., 'Allow all cookies')]"),
+                (By.XPATH, "//div[contains(@aria-label, 'Allow all cookies')]"),
+                (By.XPATH, "//button[contains(., 'Allow All')]"),
+                (By.XPATH, "//button[contains(., 'Accept All')]"),
+                (By.XPATH, "//button[contains(., 'Accept all')]"),
+                (By.XPATH, "//button[contains(., 'Allow essential')]"),
+                # Look for blue button (usually the accept button)
+                (By.XPATH, "//div[@role='dialog']//button[contains(@class, 'Selected')]"),
+                (By.XPATH, "//div[@role='dialog']//div[@role='button' and contains(@class, 'primary')]"),
+                # Arabic
+                (By.XPATH, "//button[contains(., 'السماح')]"),
+                (By.XPATH, "//span[contains(., 'السماح')]"),
+                (By.XPATH, "//button[contains(., 'قبول')]"),
+                # Data attributes
+                (By.CSS_SELECTOR, "button[data-cookiebanner='accept_button']"),
                 (By.CSS_SELECTOR, "button[data-testid='cookie-policy-manage-dialog-accept-button']"),
+                # Generic - look for any button with "cookie" nearby
+                (By.XPATH, "//div[contains(@class, 'cookie')]//button"),
             ]
             
             for by, selector in cookie_selectors:
                 try:
-                    btn = self.driver.find_element(by, selector)
-                    if btn and btn.is_displayed():
+                    # Use a short explicit wait for the element
+                    btn = WebDriverWait(self.driver, 1).until(EC.element_to_be_clickable((by, selector)))
+                    if btn:
+                        log(f"Found cookie button: {selector}", "INFO")
                         btn.click()
                         log("Cookie consent accepted!", "OK")
-                        time.sleep(1)
+                        time.sleep(2) # Wait for dialog to disappear
                         return True
                 except:
                     continue
@@ -602,6 +619,8 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
     def step2_enter_phone(self, number):
         """Step 2: Enter number (Desktop Flow)"""
         step_name = "2_enter_phone"
+        # Check cookies again (sometimes appears late)
+        self._handle_cookie_consent()
         try:
             # Desktop ID is 'identify_email'
             self.wait.until(EC.presence_of_element_located((By.ID, "identify_email")))
@@ -617,6 +636,8 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
     def step3_click_search(self):
         """Step 3: Click Search"""
         step_name = "3_click_search"
+        # Check cookies crucial here as it blocks the button
+        self._handle_cookie_consent()
         try:
             # Desktop ID is 'did_submit'
             btn = self.driver.find_element(By.ID, "did_submit")
@@ -625,6 +646,9 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
             self._save_screenshot(step_name)
             return True
         except Exception as e:
+            # Final attempt to clear cookie if we couldn't find/click
+            if self._handle_cookie_consent():
+                 log("Found and cleared cookie dialog late - retrying step might be needed but failed for now", "WARN")
             self._handle_failure(step_name)
             return False
 
@@ -699,15 +723,37 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
             time.sleep(1)
             
             # Click Continue
-            # Desktop: Usually <button type="submit">Continue</button>
-            # Arabic: "متابعة"
-            continue_btns = self.driver.find_elements(By.CSS_SELECTOR, "button[type='submit']")
+            # Enhanced selectors for Continue button
+            continue_selectors = [
+                (By.CSS_SELECTOR, "button[type='submit']"),
+                (By.XPATH, "//button[contains(text(), 'Continue')]"),
+                (By.XPATH, "//button[contains(text(), 'متابعة')]"),
+                (By.XPATH, "//span[contains(text(), 'Continue')]"),
+                (By.XPATH, "//div[@role='button' and contains(text(), 'Continue')]"),
+                (By.ID, "u_0_0_v"), # Example ID, might change
+                (By.CSS_SELECTOR, ".uiButtonConfirm"),
+                (By.XPATH, "//button[contains(@class, 'selected')]"),
+            ]
+            
             clicked_cont = False
-            for btn in continue_btns:
-                if btn.is_displayed():
-                    btn.click()
-                    clicked_cont = True
-                    break
+            for by, selector in continue_selectors:
+                try:
+                    btns = self.driver.find_elements(by, selector)
+                    for btn in btns:
+                        if btn.is_displayed():
+                            log(f"Found Continue button: {selector}", "INFO")
+                             # Cookie check before click
+                            self._handle_cookie_consent()
+                            try:
+                                btn.click()
+                                clicked_cont = True
+                            except:
+                                log(f"Standard click failed for {selector}, trying JS...", "WARN")
+                                self.driver.execute_script("arguments[0].click();", btn)
+                                clicked_cont = True
+                            break
+                    if clicked_cont: break
+                except: continue
             
             if not clicked_cont:
                 # Try by text
@@ -982,12 +1028,20 @@ if __name__ == "__main__":
         browser = FacebookOTPBrowser(headless=True) # Ensure headless for batch
         try:
              res = browser.send_otp(arg)
+             # Always print last URL
+             last_url = res.get('last_url', res.get('otp_url', ''))
+             if last_url:
+                 print(f"Last URL: {last_url}")
+             
              # Print final status for shell script extraction
              if res['status'] == 'ERROR':
                  print(f"FINAL_STATUS_MSG: {res['message']}")
              elif res['status'] == 'OTP_SENT':
                   print("OTP_SENT") 
-                  print(f"Final URL: {res.get('last_url', '')}")
+             elif res['status'] == 'NOT_FOUND':
+                  print("FINAL_STATUS_MSG: Account Not Found")
+             else:
+                  print(f"FINAL_STATUS_MSG: {res.get('message', 'Unknown')}")
         except Exception as e:
              print(f"FINAL_STATUS_MSG: Critical Script Error: {e}")
 
