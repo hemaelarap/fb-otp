@@ -316,12 +316,7 @@ class FacebookOTPBrowser:
             # Standard Chrome Options
             safe_options = get_configured_options(use_mobile_emulation=False)
             
-            # Check for custom Chrome/Chromium path (for CI environments)
-            chrome_bin = os.environ.get('CHROME_BIN')
-            if chrome_bin and os.path.exists(chrome_bin):
-                log(f"Using custom Chrome binary: {chrome_bin}", "INFO")
-                safe_options.binary_location = chrome_bin
-            
+            chrome_error = None
             if ChromeDriverManager:
                 try:
                     driver_path = ChromeDriverManager().install()
@@ -337,7 +332,8 @@ class FacebookOTPBrowser:
                     self.driver = webdriver.Chrome(service=service, options=safe_options)
                     log("Standard Chrome (via DriverManager) ready!", "OK")
                 except Exception as e:
-                        log(f"Standard Chrome (Manager) failed: {e}", "WARN")
+                    chrome_error = str(e)
+                    log(f"Standard Chrome (Manager) failed: {e}", "WARN")
             
             # Fallback: Direct Standard Chrome
             if not self.driver:
@@ -345,8 +341,11 @@ class FacebookOTPBrowser:
                     self.driver = webdriver.Chrome(options=safe_options)
                     log("Standard Chrome (direct) ready!", "OK")
                 except Exception as e:
-                    self.wait = None
+                    chrome_error = str(e)
                     log(f"Standard Chrome (Direct) failed: {e}", "ERROR")
+            
+            # Store error for later reporting
+            self._chrome_error = chrome_error
 
             # --- ADVANCED FINGERPRINT SPOOFING (CDP) ---
             if self.driver:
@@ -748,7 +747,8 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
         try:
             # Setup browser
             if not self._setup_driver():
-                result["message"] = "Failed to setup browser"
+                error_detail = getattr(self, '_chrome_error', 'Unknown error')
+                result["message"] = f"Failed to setup browser: {error_detail}"
                 return result
             
             # LOOP for Multiple Accounts (Default 1 pass)
