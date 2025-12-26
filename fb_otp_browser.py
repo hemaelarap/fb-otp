@@ -882,46 +882,78 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
                 
             time.sleep(0.5)
             
-            # Click Continue using JS (TESTED & VERIFIED WINNING CODE)
-            js_click_continue = """
-            (function() {
-                // Method 1: Verified Winning Code (Target by name, class, or text)
-                let btn = document.querySelector('button[name="reset_action"]') || 
-                          document.querySelector('button._42ft._4jy0._9nq0') ||
-                          document.evaluate("//button[contains(., 'Continue')]", document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue ||
-                          document.evaluate("//button[contains(., 'متابعة')]", document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
-
-                if (btn) { btn.click(); return 'clicked_btn_selector'; }
-                
-                // Method 2: Fallback to any submit button
-                btn = document.querySelector('button[type="submit"]');
-                if (btn) { btn.click(); return 'clicked_submit'; }
-                
-                return 'not_found';
-            })();
-            """
+            # SUCCESS: We have an SMS option selected (or verified)
+            time.sleep(0.5)
             
-            result = self.driver.execute_script(js_click_continue)
+            # ---------------------------------------------------------
+            # ULTIMATE CONTINUE BUTTON CLICKER (ALL POSSIBLE WAYS)
+            # ---------------------------------------------------------
+            log("Clicking 'Continue' / 'Send' button (Ultimate Strategy)...", "INFO")
             
-            if result and result != 'not_found':
-                log(f"Continue button clicked ({result})!", "OK")
-            else:
-                log("❌ Continue button not found (JS logic)", "ERROR")
-                # Attempt standard click fallback
+            # 1. Define every possible selector seen on Desktop/Mobile/Arabic/English
+            candidates = [
+                # Verified Desktop names/classes
+                (By.NAME, "reset_action"),
+                (By.CSS_SELECTOR, "button._42ft._4jy0._9nq0"),
+                (By.ID, "did_submit"),
+                (By.ID, "u_0_5_"),
+                
+                # Standard Types
+                (By.CSS_SELECTOR, "button[type='submit']"),
+                (By.CSS_SELECTOR, "input[type='submit']"),
+                
+                # Text-based (Case Insensitive via XPath) - English
+                (By.XPATH, "//button[contains(translate(., 'CONTINUE', 'continue'), 'continue')]"),
+                (By.XPATH, "//span[contains(translate(., 'CONTINUE', 'continue'), 'continue')]"),
+                (By.XPATH, "//div[@role='button' and contains(translate(., 'CONTINUE', 'continue'), 'continue')]"),
+                
+                # Text-based - Arabic
+                (By.XPATH, "//button[contains(., 'متابعة')]"),
+                (By.XPATH, "//span[contains(., 'متابعة')]"),
+                (By.XPATH, "//button[contains(., 'إرسال')]"),
+                
+                # Generic confirm classes
+                (By.CSS_SELECTOR, ".uiButtonConfirm button"),
+                (By.CSS_SELECTOR, ".uiButtonConfirm input"),
+                (By.CSS_SELECTOR, "[role='button']"),
+            ]
+            
+            clicked_any = False
+            for by, val in candidates:
                 try:
-                    c_btns = self.driver.find_elements(By.TAG_NAME, "button")
-                    for b in c_btns:
-                        if "continue" in b.text.lower() or "متابعة" in b.text:
-                             b.click()
-                             log("Clicked Continue (Standard Fallback)", "OK")
-                             result = "clicked_standard"
-                             break
-                except: pass
+                    # Find all matches for this selector
+                    elems = self.driver.find_elements(by, val)
+                    for el in elems:
+                        if el.is_displayed():
+                            # Method A: Standard Click
+                            try:
+                                el.click()
+                                log(f"Clicked Continue (Standard) using {val}", "OK")
+                                clicked_any = True
+                                break
+                            except:
+                                # Method B: JS Click
+                                try:
+                                    self.driver.execute_script("arguments[0].click();", el)
+                                    log(f"Clicked Continue (JS) using {val}", "OK")
+                                    clicked_any = True
+                                    break
+                                except: pass
+                    
+                    if clicked_any: break
+                except: continue
                 
-                if not result or result == 'not_found':
-                    return False, "CONTINUE_BTN_MISSING"
+            if not clicked_any:
+                log("❌ Continue button NOT clicked by any method!", "ERROR")
+                # Last ditch effort: Enter key on body
+                try:
+                    self.driver.find_element(By.TAG_NAME, "body").send_keys(Keys.ENTER)
+                    log("Pressed ENTER as last resort", "WARN")
+                    clicked_any = True
+                except:
+                     return False, "CONTINUE_BTN_MISSING"
 
-            time.sleep(1.5)
+            time.sleep(2.0) # Wait for processing
             self._save_screenshot(step_name + "_success")
             return True, "OK"
 
