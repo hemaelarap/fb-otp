@@ -240,6 +240,10 @@ class FacebookOTPBrowser:
              caption = f"📸 Step: {name}"
              self.send_telegram_photo(caption, filename)
          except: pass
+    
+    def _take_step_snapshot(self, step_name, phone_info=""):
+        """Alias for _save_screenshot to prevent errors if old calls exist"""
+        self._save_screenshot(step_name)
 
     def _setup_driver(self):
         """Setup Chrome WebDriver with optional proxy support"""
@@ -622,9 +626,32 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
         # Check cookies again (sometimes appears late)
         self._handle_cookie_consent()
         try:
-            # Desktop ID is 'identify_email'
-            self.wait.until(EC.presence_of_element_located((By.ID, "identify_email")))
-            inp = self.driver.find_element(By.ID, "identify_email")
+            # Try multiple selectors for input field
+            input_selectors = [
+                (By.ID, "identify_email"),
+                (By.NAME, "email"),
+                (By.CSS_SELECTOR, "input[name='email']"),
+                (By.CSS_SELECTOR, "input[type='text']"),
+                (By.XPATH, "//input[@placeholder]"),
+            ]
+            
+            inp = None
+            for by, selector in input_selectors:
+                try:
+                    inp = WebDriverWait(self.driver, 5).until(
+                        EC.presence_of_element_located((by, selector))
+                    )
+                    if inp and inp.is_displayed():
+                        log(f"Found input field: {selector}", "INFO")
+                        break
+                except:
+                    continue
+            
+            if not inp:
+                log("Could not find input field", "ERROR")
+                self._handle_failure(step_name)
+                return False
+            
             inp.clear()
             inp.send_keys(number)
             self._save_screenshot(step_name)
@@ -639,9 +666,41 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
         # Check cookies crucial here as it blocks the button
         self._handle_cookie_consent()
         try:
-            # Desktop ID is 'did_submit'
-            btn = self.driver.find_element(By.ID, "did_submit")
-            btn.click()
+            # Try multiple selectors for search button
+            button_selectors = [
+                (By.ID, "did_submit"),
+                (By.NAME, "did_submit"),
+                (By.CSS_SELECTOR, "button[name='did_submit']"),
+                (By.CSS_SELECTOR, "button[type='submit']"),
+                (By.XPATH, "//button[contains(text(), 'Search')]"),
+                (By.XPATH, "//button[contains(text(), 'بحث')]"),
+                (By.XPATH, "//input[@type='submit']"),
+            ]
+            
+            btn = None
+            for by, selector in button_selectors:
+                try:
+                    btn = self.driver.find_element(by, selector)
+                    if btn and btn.is_displayed():
+                        log(f"Found search button: {selector}", "INFO")
+                        break
+                except:
+                    continue
+            
+            if not btn:
+                log("Could not find search button", "ERROR")
+                self._handle_failure(step_name)
+                return False
+            
+            # Try standard click, fallback to JS click
+            try:
+                btn.click()
+                log("Search button clicked!", "OK")
+            except:
+                log("Standard click failed, trying JS click...", "WARN")
+                self.driver.execute_script("arguments[0].click();", btn)
+                log("Search button clicked (JS)!", "OK")
+            
             time.sleep(3) # Wait for search
             self._save_screenshot(step_name)
             return True
@@ -863,7 +922,7 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
                     
                 # ========== STEP 4: Check Result ==========
                 status = self.step4_check_account_found()
-                self._take_step_snapshot(f"4_Result_{status}", phone)
+                self._save_screenshot(f"4_Result_{status}")
                 
                 if status == "NOT_FOUND":
                     log("Account NOT FOUND (Final)", "WARN")
