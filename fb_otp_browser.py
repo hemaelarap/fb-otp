@@ -761,9 +761,13 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
                     self._save_screenshot("4_Result_MULTIPLE_SELECTED")
                 return "MULTIPLE_ACCOUNTS"
             
-            # Case 3: Still on identify page = NOT_FOUND
+            # Case 3: Still on identify page (but with ctx=recover = need to click "Try another way")
             if "identify" in url:
-                return "NOT_FOUND"
+                if "ctx=recover" in url:
+                    log("Detected identify page with ctx=recover - treating as TRY_ANOTHER_WAY", "INFO")
+                    return "TRY_ANOTHER_WAY"
+                else:
+                    return "NOT_FOUND"
                 
             # Case 4: Recover Page (Direct success)
             if "recover" in url or "reset" in url:
@@ -831,51 +835,162 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
             except Exception as e:
                 log(f"Check for 'Try another way' failed (non-critical): {e}", "WARN")
 
-            # USER REQUEST: Assume SMS option is selected by default and just click Continue.
-            # Skip all searching logic - the radio is pre-selected per user feedback.
-            log("Assuming SMS option is pre-selected (User Directive). Proceeding to Continue...", "INFO")
-             
-            # Optional: Quick check just to log what we see (non-blocking)
+            # STEP A: Click on SMS option (Using exact selector from browser success test)
+            # IMPORTANT: This click is required to prevent redirect loops, even if pre-selected.
+            log("Clicking SMS option (Required)...", "INFO")
+            sms_clicked = False
+            
+            # Method 1: Exact ID selector that worked in browser test
             try:
-                labels = self.driver.find_elements(By.TAG_NAME, "label")
-                for l in labels:
-                    if "sms" in l.text.lower() or number[-4:] in l.text:
-                         log(f"Verified SMS text present: {l.text[:30]}", "INFO")
-                         break
-            except: pass
-
-            found_sms_option = True # FORCE SUCCESS - don't fail here
-                
-            time.sleep(0.5)
+                sms_radio = self.driver.find_element(By.CSS_SELECTOR, "input[id^='send_sms']")
+                self.driver.execute_script("arguments[0].click();", sms_radio)
+                log("Clicked SMS radio (id^=send_sms)!", "OK")
+                sms_clicked = True
+            except:
+                pass
+            
+            # Method 2: Find label with 'sms' text
+            if not sms_clicked:
+                try:
+                    labels = self.driver.find_elements(By.TAG_NAME, "label")
+                    for l in labels:
+                        if "sms" in l.text.lower():
+                            self.driver.execute_script("arguments[0].click();", l)
+                            log(f"Clicked SMS label: {l.text[:30]}", "OK")
+                            sms_clicked = True
+                            break
+                except:
+                    pass
+            
+            # Method 3: Any radio button with SMS context
+            if not sms_clicked:
+                try:
+                    radios = self.driver.find_elements(By.CSS_SELECTOR, "input[type='radio']")
+                    for r in radios:
+                        if "sms" in r.get_attribute("outerHTML").lower():
+                            self.driver.execute_script("arguments[0].click();", r)
+                            log("Clicked generic SMS radio button", "OK")
+                            sms_clicked = True
+                            break
+                except:
+                    pass
+            
+            if not sms_clicked:
+                log("No SMS option found - proceeding anyway", "WARN")
+            
+            time.sleep(0.5) # Wait for selection to register
             
             # SUCCESS: We have an SMS option selected (or verified)
-            time.sleep(0.5)
             
             # ---------------------------------------------------------
             # SIMPLE CONTINUE BUTTON CLICK (User Verified Selector)
+            # IMPORTANT: Avoid clicking "Not you?" button!
             # ---------------------------------------------------------
             log("Clicking 'Continue' button using verified selector...", "INFO")
             
+            continue_clicked = False
+            
+            # Method 0: JavaScript - Find the PRIMARY Continue button (blue/submit button)
+            # This is the most reliable method to avoid "Not you?" link
             try:
-                # Primary: button[name="reset_action"] - User confirmed this works
-                btn = self.driver.find_element(By.NAME, "reset_action")
-                btn.click()
-                log("Clicked Continue button (name=reset_action)!", "OK")
-            except:
-                # Fallback: Try JS click if standard fails
+                js_click_continue = """
+                (function() {
+                    // Method A: Find button with name='reset_action' - PRIMARY
+                    let btn = document.querySelector('button[name="reset_action"]');
+                    if (btn) { btn.click(); return 'clicked_reset_action'; }
+                    
+                    // Method B: Find the blue/primary continue button by looking at all buttons
+                    // and picking the one that is NOT "Not you?" / "ليس أنت"
+                    let buttons = [...document.querySelectorAll('button')];
+                    for (let b of buttons) {
+                        let txt = b.innerText.toLowerCase();
+                        // Skip "Not you?" buttons completely
+                        if (txt.includes('not you') || txt.includes('ليس أنت') || txt.includes('ليس انت')) {
+                            continue;
+                        }
+                        // Look for Continue / متابعة / إرسال / Send
+                        if (txt.includes('continue') || txt.includes('متابعة') || txt.includes('إرسال') || txt.includes('send')) {
+                            b.click();
+                            return 'clicked_continue_text';
+                        }
+                    }
+                    
+                    // Method C: Find primary/submit button that is NOT a link
+                    buttons = [...document.querySelectorAll('button[type="submit"]')];
+                    for (let b of buttons) {
+                        let txt = b.innerText.toLowerCase();
+                        if (!txt.includes('not') && !txt.includes('ليس')) {
+                            b.click();
+                            return 'clicked_submit';
+                        }
+                    }
+                    
+                    // Method D: Find by form action - submit the form directly
+                    let form = document.querySelector('form');
+                    if (form) {
+                        let submitBtn = form.querySelector('button[type="submit"], input[type="submit"]');
+                        if (submitBtn) {
+                            submitBtn.click();
+                            return 'clicked_form_submit';
+                        }
+                    }
+                    
+                    return 'not_found';
+                })();
+                """
+                result = self.driver.execute_script(js_click_continue)
+                if result and result != 'not_found':
+                    log(f"Clicked Continue button via JS ({result})!", "OK")
+                    continue_clicked = True
+            except Exception as e:
+                log(f"JS Continue click failed: {e}", "WARN")
+            
+            # Method 1: Find by name='reset_action' (Most specific) - Fallback
+            if not continue_clicked:
                 try:
                     btn = self.driver.find_element(By.NAME, "reset_action")
-                    self.driver.execute_script("arguments[0].click();", btn)
-                    log("Clicked Continue button (JS fallback)!", "OK")
-                except:
-                    # Last resort: button[type='submit']
-                    try:
-                        btn = self.driver.find_element(By.CSS_SELECTOR, "button[type='submit']")
+                    if btn.is_displayed():
                         btn.click()
-                        log("Clicked Continue button (type=submit fallback)!", "OK")
-                    except Exception as e:
-                        log(f"❌ Continue button NOT clicked: {e}", "ERROR")
-                        return False, "CONTINUE_BTN_MISSING"
+                        log("Clicked Continue button (name=reset_action)!", "OK")
+                        continue_clicked = True
+                except:
+                    pass
+            
+            # Method 2: Find Continue button by text explicitly (avoid "Not you?")
+            if not continue_clicked:
+                try:
+                    buttons = self.driver.find_elements(By.TAG_NAME, "button")
+                    for b in buttons:
+                        btn_text = b.text.lower()
+                        # Skip "Not you?" completely
+                        if "not you" in btn_text or "ليس أنت" in btn_text or "ليس انت" in btn_text:
+                            continue
+                        # Look for Continue/متابعة but make sure it's not a hidden link
+                        if ("continue" in btn_text or "متابعة" in btn_text):
+                            b.click()
+                            log(f"Clicked Continue button (text match: {b.text[:20]})!", "OK")
+                            continue_clicked = True
+                            break
+                except:
+                    pass
+            
+            # Method 3: button[type='submit'] but verify it's not "Not you"
+            if not continue_clicked:
+                try:
+                    btns = self.driver.find_elements(By.CSS_SELECTOR, "button[type='submit']")
+                    for b in btns:
+                        btn_txt = b.text.lower()
+                        if "not" not in btn_txt and "ليس" not in btn_txt:
+                            b.click()
+                            log("Clicked Continue button (type=submit)!", "OK")
+                            continue_clicked = True
+                            break
+                except:
+                    pass
+            
+            if not continue_clicked:
+                log("❌ Continue button NOT clicked!", "ERROR")
+                return False, "CONTINUE_BTN_MISSING"
 
             time.sleep(2.0) # Wait for processing
             self._save_screenshot(step_name + "_success")
@@ -984,11 +1099,31 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
                 elif status == "TRY_ANOTHER_WAY":
                     log("Redirected to Login - Clicking 'Try Another Way'...", "INFO")
                     try:
-                        # Click the button
-                        # Often the link is essentially /recover/initiate
+                        # Navigate to the recovery initiate page
                         self.driver.get("https://www.facebook.com/recover/initiate/?is_from_lara_screen=1")
-                        time.sleep(5)
-                        # Verify we are now on recovery page
+                        time.sleep(3)
+                        
+                        # RE-ENTER THE PHONE NUMBER on this page
+                        try:
+                            inp = self.driver.find_element(By.ID, "identify_email")
+                            inp.clear()
+                            inp.send_keys(phone)
+                            log(f"Re-entered phone on recovery page: {phone}", "OK")
+                            time.sleep(1)
+                            
+                            # Click Continue/Search on this page
+                            try:
+                                btn = self.driver.find_element(By.ID, "did_submit")
+                                btn.click()
+                            except:
+                                btn = self.driver.find_element(By.CSS_SELECTOR, "button[type='submit']")
+                                btn.click()
+                            log("Clicked search on recovery page", "OK")
+                            time.sleep(3)
+                        except Exception as e:
+                            log(f"Could not re-enter phone: {e}", "WARN")
+                        
+                        # Verify we are now on proper recovery page
                         if "recover" in self.driver.current_url or "reset" in self.driver.current_url:
                              status = "FOUND" # Proceed to next steps
                         else:
