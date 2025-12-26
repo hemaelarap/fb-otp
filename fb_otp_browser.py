@@ -703,7 +703,7 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
                 self.driver.execute_script("arguments[0].click();", btn)
                 log("Search button clicked (JS)!", "OK")
             
-            time.sleep(1.5) # Wait for search (Optimized)
+            time.sleep(2.5) # Wait for search results to load
             self._save_screenshot(step_name)
             return True
         except Exception as e:
@@ -742,11 +742,7 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
                     self._save_screenshot("4_Result_MULTIPLE_SELECTED")
                 return "MULTIPLE_ACCOUNTS"
                 
-            # Case 3: Redirected to Login (Try Another Way needed)
-            if "login" in url or "try another way" in page_text or "جرب طريقة أخرى" in page_text:
-                return "TRY_ANOTHER_WAY"
-            
-            # Case 4: Recover Page (Direct success)
+            # Case 3: Recover Page (Direct success)
             if "recover" in url or "reset" in url:
                 return "FOUND"
 
