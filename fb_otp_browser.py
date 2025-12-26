@@ -724,13 +724,25 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
             if "no result" in page_text or "didn't match" in page_text:
                 return "NOT_FOUND"
                 
-            # Case 2: Multiple Accounts (Look for 'This is my account')
-            # English: "This is my account", Arabic: "هذا حسابي"
+            # Case 2: Multiple Accounts - Auto-select first account using JS
             if "this is my account" in page_text or "هذا حسابي" in page_text:
+                log("Multiple accounts found - selecting first one...", "INFO")
+                js_select_first = """
+                (function() {
+                    let btns = [...document.querySelectorAll('a, button, div[role="button"]')];
+                    let target = btns.find(b => b.innerText.includes('This is my account') || b.innerText.includes('هذا حسابي'));
+                    if (target) { target.click(); return 'selected'; }
+                    return 'not_found';
+                })();
+                """
+                result = self.driver.execute_script(js_select_first)
+                if result == 'selected':
+                    log("First account selected!", "OK")
+                    time.sleep(2)
+                    self._save_screenshot("4_Result_MULTIPLE_SELECTED")
                 return "MULTIPLE_ACCOUNTS"
                 
             # Case 3: Redirected to Login (Try Another Way needed)
-            # URL contains 'login' and page has 'Try another way' or password field
             if "login" in url or "try another way" in page_text or "جرب طريقة أخرى" in page_text:
                 return "TRY_ANOTHER_WAY"
             
@@ -783,49 +795,40 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
             sms_label.click()
             time.sleep(0.5)
             
-            # Click Continue
-            # Enhanced selectors for Continue button
-            continue_selectors = [
-                (By.CSS_SELECTOR, "button[type='submit']"),
-                (By.XPATH, "//button[contains(text(), 'Continue')]"),
-                (By.XPATH, "//button[contains(text(), 'متابعة')]"),
-                (By.XPATH, "//span[contains(text(), 'Continue')]"),
-                (By.XPATH, "//div[@role='button' and contains(text(), 'Continue')]"),
-                (By.ID, "u_0_0_v"), # Example ID, might change
-                (By.CSS_SELECTOR, ".uiButtonConfirm"),
-                (By.XPATH, "//button[contains(@class, 'selected')]"),
-            ]
+            # Click Continue using JS (TESTED & WORKING)
+            js_click_continue = """
+            (function() {
+                // Method 1: button[name='reset_action'] (most reliable)
+                let btn = document.querySelector('button[name="reset_action"]');
+                if (btn) { btn.click(); return 'clicked_reset_action'; }
+                
+                // Method 2: button.selected
+                btn = document.querySelector('button.selected');
+                if (btn) { btn.click(); return 'clicked_selected'; }
+                
+                // Method 3: button type=submit
+                btn = document.querySelector('button[type="submit"]');
+                if (btn) { btn.click(); return 'clicked_submit'; }
+                
+                // Method 4: span text search
+                let spans = [...document.querySelectorAll('span')];
+                let target = spans.find(s => s.innerText === 'Continue' || s.innerText === 'متابعة');
+                if (target) { target.click(); return 'clicked_span'; }
+                
+                // Method 5: button text search
+                let buttons = [...document.querySelectorAll('button')];
+                target = buttons.find(b => b.innerText.includes('Continue') || b.innerText.includes('متابعة'));
+                if (target) { target.click(); return 'clicked_button_text'; }
+                
+                return 'not_found';
+            })();
+            """
             
-            clicked_cont = False
-            for by, selector in continue_selectors:
-                try:
-                    btns = self.driver.find_elements(by, selector)
-                    for btn in btns:
-                        if btn.is_displayed():
-                            log(f"Found Continue button: {selector}", "INFO")
-                             # Cookie check before click
-                            self._handle_cookie_consent()
-                            try:
-                                btn.click()
-                                clicked_cont = True
-                            except:
-                                log(f"Standard click failed for {selector}, trying JS...", "WARN")
-                                self.driver.execute_script("arguments[0].click();", btn)
-                                clicked_cont = True
-                            break
-                    if clicked_cont: break
-                except: continue
+            result = self.driver.execute_script(js_click_continue)
             
-            if not clicked_cont:
-                # Try by text
-                buttons = self.driver.find_elements(By.TAG_NAME, "button")
-                for btn in buttons:
-                     if "continue" in btn.text.lower() or "متابعة" in btn.text:
-                         btn.click()
-                         clicked_cont = True
-                         break
-            
-            if not clicked_cont:
+            if result and result != 'not_found':
+                log(f"Continue button clicked ({result})!", "OK")
+            else:
                 log("❌ Continue button not found", "ERROR")
                 return False, "CONTINUE_BTN_MISSING"
 
