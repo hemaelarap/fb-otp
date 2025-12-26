@@ -604,10 +604,10 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
             log(f"Cookie consent check error: {e}", "WARN")
             return False
 
-    def step1_open_recovery_page(self):
+    def step1_open_recovery_page(self, phone=""):
         """Step 1: Open Facebook Identify Page (Desktop)"""
         step_name = "1_open_identify"
-        log("Step 1: Opening Facebook Identify (Desktop)...")
+        log(f"Step 1: Opening Facebook Identify [{phone}]...")
         try:
             self.driver.get('https://www.facebook.com/login/identify/?ctx=recover&from_login_screen=0')
             self._save_screenshot(step_name)
@@ -625,6 +625,7 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
     def step2_enter_phone(self, number):
         """Step 2: Enter number (Desktop Flow)"""
         step_name = "2_enter_phone"
+        log(f"Step 2: Entering phone [{number}]...")
         # Check cookies again (sometimes appears late)
         self._handle_cookie_consent()
         try:
@@ -662,9 +663,10 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
             self._handle_failure(step_name)
             return False
 
-    def step3_click_search(self):
+    def step3_click_search(self, phone=""):
         """Step 3: Click Search"""
         step_name = "3_click_search"
+        log(f"Step 3: Clicking Search [{phone}]...")
         # Check cookies crucial here as it blocks the button
         self._handle_cookie_consent()
         try:
@@ -713,16 +715,23 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
             self._handle_failure(step_name)
             return False
 
-    def step4_check_account_found(self):
+    def step4_check_account_found(self, phone=""):
         """Step 4: Analyze Search Result"""
         step_name = "4_check_result"
+        log(f"Step 4: Checking account result [{phone}]...")
         try:
             url = self.driver.current_url
             page_text = self.driver.find_element(By.TAG_NAME, "body").text.lower()
             
-            # Case 1: No Result
-            if "no result" in page_text or "didn't match" in page_text:
-                return "NOT_FOUND"
+            # Case 1: No Result - CHECK FIRST before anything else
+            not_found_patterns = [
+                "no result", "no search results", "didn't match", 
+                "لم يتم العثور", "لا توجد نتائج", "try again with other"
+            ]
+            for pattern in not_found_patterns:
+                if pattern in page_text:
+                    log(f"NOT_FOUND detected: '{pattern}'", "WARN")
+                    return "NOT_FOUND"
                 
             # Case 2: Multiple Accounts - Auto-select first account using JS
             if "this is my account" in page_text or "هذا حسابي" in page_text:
@@ -741,8 +750,12 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
                     time.sleep(2)
                     self._save_screenshot("4_Result_MULTIPLE_SELECTED")
                 return "MULTIPLE_ACCOUNTS"
+            
+            # Case 3: Still on identify page = NOT_FOUND
+            if "identify" in url:
+                return "NOT_FOUND"
                 
-            # Case 3: Recover Page (Direct success)
+            # Case 4: Recover Page (Direct success)
             if "recover" in url or "reset" in url:
                 return "FOUND"
 
@@ -755,8 +768,9 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
     def step5_select_sms_option(self, number):
         """Step 5: Select SMS Option"""
         step_name = "5_select_sms"
+        log(f"Step 5: Selecting SMS option [{number}]...")
         try:
-            # Force Navigate if not already on recovery page (Logic moved to main loop, but safe to ensure here)
+            # Force Navigate if not already on recovery page
             if "recover" not in self.driver.current_url:
                  self.driver.get("https://www.facebook.com/recover/initiate/?is_from_lara_screen=1")
                  time.sleep(3)
@@ -907,7 +921,7 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
                     time.sleep(2)
                 
                 # ========== STEP 1: Open identify page ==========
-                if not self.step1_open_recovery_page():
+                if not self.step1_open_recovery_page(phone):
                     result["message"] = "Failed to open recovery page"
                     break # Critical failure
                 
@@ -917,12 +931,12 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
                     break
                 
                 # ========== STEP 3: Search ==========
-                if not self.step3_click_search():
+                if not self.step3_click_search(phone):
                     result["message"] = "Failed to click search"
                     break
                     
                 # ========== STEP 4: Check Result ==========
-                status = self.step4_check_account_found()
+                status = self.step4_check_account_found(phone)
                 self._save_screenshot(f"4_Result_{status}")
                 
                 if status == "NOT_FOUND":
@@ -984,9 +998,11 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
                         log(f"Error handling multiple accounts: {e}", "ERROR")
                         break
                 elif status == "FOUND":
-                    if accounts_processed > 0:
-                         break # Stop looping if we only found one
+                    log("Account FOUND - proceeding to SMS selection...", "OK")
+                    # Continue to Step 5 (no break)
+                    pass
                 else:
+                    log(f"Unknown status: {status}", "WARN")
                     break # Unknown status
 
 
