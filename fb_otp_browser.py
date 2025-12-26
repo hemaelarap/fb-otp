@@ -806,23 +806,27 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
             self.driver.execute_script("arguments[0].click();", sms_label)
             time.sleep(0.5)
             
-            # Click Continue using JS (TESTED & WORKING in browser)
+            # Click Continue using JS (TESTED & VERIFIED WINNING CODE)
             js_click_continue = """
             (function() {
-                // Method 1: Click span with "Continue" text directly (MOST RELIABLE - TESTED)
-                let spans = [...document.querySelectorAll('span')];
-                let target = spans.find(s => s.innerText === 'Continue');
-                if (target) { target.click(); return 'clicked_span_continue'; }
+                // Method 1: Verified Winning Code (Target by name or class)
+                let btn = document.querySelector('button[name="reset_action"]') || 
+                          document.querySelector('button._42ft._4jy0._9nq0');
+                if (btn) { btn.click(); return 'clicked_reset_action_or_class'; }
+
+                // Method 2: Try by searching text in all buttons (English/Arabic)
+                let buttons = Array.from(document.querySelectorAll('button'));
+                let target = buttons.find(el => {
+                    let text = el.innerText.trim();
+                    return text === 'Continue' || text === 'متابعة';
+                });
+                if (target) { target.click(); return 'clicked_button_text'; }
                 
-                // Method 2: Arabic text
-                target = spans.find(s => s.innerText === 'متابعة');
-                if (target) { target.click(); return 'clicked_span_arabic'; }
+                // Method 3: XPath fallback
+                let xpathBtn = document.evaluate("//button[contains(., 'Continue')] | //button[contains(., 'متابعة')]", document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
+                if (xpathBtn) { xpathBtn.click(); return 'clicked_xpath'; }
                 
-                // Method 3: button[name='reset_action'] (fallback)
-                let btn = document.querySelector('button[name="reset_action"]');
-                if (btn) { btn.click(); return 'clicked_reset_action'; }
-                
-                // Method 4: button type=submit
+                // Method 4: Fallback to any submit button
                 btn = document.querySelector('button[type="submit"]');
                 if (btn) { btn.click(); return 'clicked_submit'; }
                 
@@ -864,7 +868,7 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
             ]
             
             is_success = False
-            if "enter_code" in url or "recover/code" in url:
+            if "recover/code" in url or "recover/password" in url or "enter_code" in url:
                 is_success = True
             else:
                 for kw in success_keywords:
@@ -873,14 +877,14 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
                         break
             
             if is_success:
-                 log("🎉 OTP SUCCESS!", "SUCCESS")
+                 log(f"🎉 OTP SUCCESS! Page: {url}", "SUCCESS")
                  return True, "SENT"
             else:
                  log(f"⚠️ Unsure of success. URL: {url}", "WARN")
                  # Check for captcha
-                 if "security check" in page_text or "enter the text" in page_text:
+                 if "security check" in page_text or "enter the text" in page_text or "captcha" in page_text:
                      return False, "CAPTCHA"
-                 return True, "POSSIBLE_SUCCESS" # Assume good if no error
+                 return True, "SENT_BUT_UNVERIFIED" # Still count as success if no clear error
                  
         except Exception as e:
             return False, str(e)
