@@ -733,7 +733,16 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
                 if pattern in page_text:
                     log(f"NOT_FOUND detected: '{pattern}'", "WARN")
                     return "NOT_FOUND"
-                
+            
+            # Case 1.5: "Log Into Facebook" Password Screen (intermediate step)
+            # User reported this screen appears instead of recovery options.
+            # We need to treat this like "TRY_ANOTHER_WAY" to force a redirect.
+            if "log into facebook" in page_text or "تسجيل الدخول" in page_text:
+                 # Check if password field is present to confirm it's the login screen
+                 if "pass" in page_text or self.driver.find_elements(By.CSS_SELECTOR, "input[type='password']"):
+                      log("Detected 'Log Into Facebook' password screen. Redirecting...", "INFO")
+                      return "TRY_ANOTHER_WAY"
+
             # Case 2: Multiple Accounts - Auto-select first account using JS
             if "this is my account" in page_text or "هذا حسابي" in page_text:
                 log("Multiple accounts found - selecting first one...", "INFO")
