@@ -766,6 +766,27 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
         except Exception as e:
             return "ERROR"
 
+    def _check_broken_page(self):
+        """Check for 'This page isn't available' error and reload"""
+        try:
+            page_text = self.driver.find_element(By.TAG_NAME, "body").text.lower()
+            broken_indicators = [
+                "page isn't available", 
+                "broken link",
+                "reload page",
+                "هذه الصفحة غير متوفرة",
+                "إعادة تحميل الصفحة"
+            ]
+            
+            if any(ind in page_text for ind in broken_indicators):
+                log("⚠️ Broken/Error page detected! Reloading...", "WARN")
+                self.driver.refresh()
+                time.sleep(4)
+                return True
+            return False
+        except:
+            return False
+
     def step5_select_sms_option(self, number):
         """Step 5: Select SMS Option"""
         step_name = "5_select_sms"
@@ -775,6 +796,9 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
             if "recover" not in self.driver.current_url:
                  self.driver.get("https://www.facebook.com/recover/initiate/?is_from_lara_screen=1")
                  time.sleep(3)
+            
+            # Check for specific "Page isn't available" error
+            self._check_broken_page()
             
             self._save_screenshot(step_name + "_start")
             
