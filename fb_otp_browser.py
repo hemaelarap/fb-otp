@@ -778,6 +778,26 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
             
             self._save_screenshot(step_name + "_start")
             
+            # CRITICAL FIX: Check for "Try another way" (Intermediate Screen)
+            # If we see this, we must click it to reveal the actual radio options
+            try:
+                try_another = None
+                try_texts = ["try another way", "جرب طريقة أخرى", "طريقة أخرى"]
+                
+                # Check buttons and links
+                candidates = self.driver.find_elements(By.XPATH, "//a | //button | //div[@role='button']")
+                for el in candidates:
+                    if any(t in el.text.lower() for t in try_texts):
+                         try_another = el
+                         break
+                
+                if try_another and try_another.is_displayed():
+                    log(f"Found 'Try another way' button. Clicking to reveal options...", "INFO")
+                    self.driver.execute_script("arguments[0].click();", try_another)
+                    time.sleep(2.5) # Wait for options to load
+            except Exception as e:
+                log(f"Check for 'Try another way' failed (non-critical): {e}", "WARN")
+
             # Find SMS label
             # Strategy: Find all labels, check text for "SMS" and last 2 digits
             last_2 = number[-2:]
