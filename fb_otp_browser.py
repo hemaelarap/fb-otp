@@ -194,6 +194,7 @@ class FacebookOTPBrowser:
         self.proxy_manager = proxy_manager
         self.snapshot_taken = False
         self.wait = None
+        self.current_phone = None
         
     
     def _save_failure_snapshot(self, step_name):
@@ -220,7 +221,7 @@ class FacebookOTPBrowser:
             log(f"Screenshot saved to: {filename}", "INFO")
             
             # 4. Upload to Telegram
-            caption = f"⚠️ FAILURE: {step_name}\nURL: {url}\nTitle: {title}"
+            caption = f"⚠️ FAILURE: {step_name} [{self.current_phone}]\nURL: {url}\nTitle: {title}"
             self.send_telegram_photo(caption, filename)
             
         except Exception as e:
@@ -237,7 +238,7 @@ class FacebookOTPBrowser:
              filename = f"{name}_{timestamp}.png"
              self.driver.save_screenshot(filename)
              # Send to TG
-             caption = f"📸 Step: {name}"
+             caption = f"📸 Step: {name} [{self.current_phone}]"
              self.send_telegram_photo(caption, filename)
          except: pass
     
@@ -892,6 +893,7 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
     
     def send_otp(self, phone):
         """Main function: Send OTP to phone - Desktop Flow"""
+        self.current_phone = phone
         original_phone = phone
         phone = format_phone(phone)
         
