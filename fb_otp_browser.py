@@ -853,6 +853,23 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
                     log(f"ID Match failed: {e}", "WARN")
 
             if not found_sms_option:
+                # PRIORITY 2.5: SCAN ALL RADIOS (Generic fallback)
+                try:
+                    all_radios = self.driver.find_elements(By.CSS_SELECTOR, "input[type='radio']")
+                    for r in all_radios:
+                        # Get text of parent or body text near it?
+                        # Best is to check parent text
+                        try:
+                            parent_text = r.find_element(By.XPATH, "./..").text.lower()
+                            if "sms" in parent_text or "رسالة" in parent_text or number[-4:] in parent_text: # match last 4 digits
+                                log(f"Found SMS radio by Context: {parent_text[:30]}...", "OK")
+                                self.driver.execute_script("arguments[0].click();", r)
+                                found_sms_option = True
+                                break
+                        except: pass
+                except: pass
+
+            if not found_sms_option:
                 # PRIORITY 3: Find SMS label by Text (Original Logic)
                 last_2 = number[-2:]
                 labels = self.driver.find_elements(By.TAG_NAME, "label")
@@ -1020,11 +1037,12 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
                 result["message"] = f"Failed to setup browser: {error_detail}"
                 return result
             
-            # LOOP for Multiple Accounts (Default 1 pass)
-            max_accounts_to_process = 5
+            # LOOP for Multiple Accounts (Default 1 pass - NO RETRY)
+            # User Request: Disable loop on failure.
+            max_accounts_to_process = 1 
             accounts_processed = 0
             
-            # Only loop if we detect multiple accounts, but we need an outer loop to handle the retry logic
+            # Only loop if we explicitly detect multiple accounts later
             while accounts_processed < max_accounts_to_process:
                 
                 # If this is the 2nd+ iteration, we need to restart the flow to get a clean state
@@ -1086,6 +1104,9 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
                         
                         num_accounts = len(valid_buttons)
                         log(f"Found {num_accounts} valid account buttons.", "INFO")
+                        
+                        # Only now do we increase the loop limit
+                        max_accounts_to_process = num_accounts
                         
                         if accounts_processed >= num_accounts:
                             log("All accounts processed.", "OK")
