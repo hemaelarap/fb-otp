@@ -883,110 +883,34 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
             # SUCCESS: We have an SMS option selected (or verified)
             
             # ---------------------------------------------------------
-            # SIMPLE CONTINUE BUTTON CLICK (User Verified Selector)
-            # IMPORTANT: Avoid clicking "Not you?" button!
+            # SIMPLE CONTINUE BUTTON CLICK - ONLY VERIFIED METHOD
+            # Using ONLY name="reset_action" which was tested and confirmed working
             # ---------------------------------------------------------
-            log("Clicking 'Continue' button using verified selector...", "INFO")
+            log("Clicking 'Continue' button (name=reset_action)...", "INFO")
             
             continue_clicked = False
             
-            # Method 0: JavaScript - Find the PRIMARY Continue button (blue/submit button)
-            # This is the most reliable method to avoid "Not you?" link
+            # ONLY METHOD: Find button by name='reset_action' - THIS IS THE ONLY WORKING METHOD
             try:
-                js_click_continue = """
-                (function() {
-                    // Method A: Find button with name='reset_action' - PRIMARY
-                    let btn = document.querySelector('button[name="reset_action"]');
-                    if (btn) { btn.click(); return 'clicked_reset_action'; }
-                    
-                    // Method B: Find the blue/primary continue button by looking at all buttons
-                    // and picking the one that is NOT "Not you?" / "ليس أنت"
-                    let buttons = [...document.querySelectorAll('button')];
-                    for (let b of buttons) {
-                        let txt = b.innerText.toLowerCase();
-                        // Skip "Not you?" buttons completely
-                        if (txt.includes('not you') || txt.includes('ليس أنت') || txt.includes('ليس انت')) {
-                            continue;
-                        }
-                        // Look for Continue / متابعة / إرسال / Send
-                        if (txt.includes('continue') || txt.includes('متابعة') || txt.includes('إرسال') || txt.includes('send')) {
-                            b.click();
-                            return 'clicked_continue_text';
-                        }
-                    }
-                    
-                    // Method C: Find primary/submit button that is NOT a link
-                    buttons = [...document.querySelectorAll('button[type="submit"]')];
-                    for (let b of buttons) {
-                        let txt = b.innerText.toLowerCase();
-                        if (!txt.includes('not') && !txt.includes('ليس')) {
-                            b.click();
-                            return 'clicked_submit';
-                        }
-                    }
-                    
-                    // Method D: Find by form action - submit the form directly
-                    let form = document.querySelector('form');
-                    if (form) {
-                        let submitBtn = form.querySelector('button[type="submit"], input[type="submit"]');
-                        if (submitBtn) {
-                            submitBtn.click();
-                            return 'clicked_form_submit';
-                        }
-                    }
-                    
+                # First try JavaScript click (more reliable)
+                js_result = self.driver.execute_script("""
+                    var btn = document.querySelector('button[name="reset_action"]');
+                    if (btn) { btn.click(); return 'clicked'; }
                     return 'not_found';
-                })();
-                """
-                result = self.driver.execute_script(js_click_continue)
-                if result and result != 'not_found':
-                    log(f"Clicked Continue button via JS ({result})!", "OK")
+                """)
+                
+                if js_result == 'clicked':
+                    log("Clicked Continue button (JS: name=reset_action)!", "OK")
                     continue_clicked = True
-            except Exception as e:
-                log(f"JS Continue click failed: {e}", "WARN")
-            
-            # Method 1: Find by name='reset_action' (Most specific) - Fallback
-            if not continue_clicked:
-                try:
+                else:
+                    # Fallback to Selenium click
                     btn = self.driver.find_element(By.NAME, "reset_action")
                     if btn.is_displayed():
                         btn.click()
-                        log("Clicked Continue button (name=reset_action)!", "OK")
+                        log("Clicked Continue button (Selenium: name=reset_action)!", "OK")
                         continue_clicked = True
-                except:
-                    pass
-            
-            # Method 2: Find Continue button by text explicitly (avoid "Not you?")
-            if not continue_clicked:
-                try:
-                    buttons = self.driver.find_elements(By.TAG_NAME, "button")
-                    for b in buttons:
-                        btn_text = b.text.lower()
-                        # Skip "Not you?" completely
-                        if "not you" in btn_text or "ليس أنت" in btn_text or "ليس انت" in btn_text:
-                            continue
-                        # Look for Continue/متابعة but make sure it's not a hidden link
-                        if ("continue" in btn_text or "متابعة" in btn_text):
-                            b.click()
-                            log(f"Clicked Continue button (text match: {b.text[:20]})!", "OK")
-                            continue_clicked = True
-                            break
-                except:
-                    pass
-            
-            # Method 3: button[type='submit'] but verify it's not "Not you"
-            if not continue_clicked:
-                try:
-                    btns = self.driver.find_elements(By.CSS_SELECTOR, "button[type='submit']")
-                    for b in btns:
-                        btn_txt = b.text.lower()
-                        if "not" not in btn_txt and "ليس" not in btn_txt:
-                            b.click()
-                            log("Clicked Continue button (type=submit)!", "OK")
-                            continue_clicked = True
-                            break
-                except:
-                    pass
+            except Exception as e:
+                log(f"Continue button click failed: {e}", "WARN")
             
             if not continue_clicked:
                 log("❌ Continue button NOT clicked!", "ERROR")
