@@ -153,8 +153,26 @@ jobs:
       - name: Get IP and WARP Status
         id: ip
         run: |
-           echo "ip=$(curl -s ifconfig.me)" >> $GITHUB_OUTPUT
-           TRACE=$(curl -s https://www.cloudflare.com/cdn-cgi/trace)
+           # Try multiple IP services with timeout and retry
+           IP=""
+           for service in "https://api.ipify.org" "https://ifconfig.me" "https://icanhazip.com" "https://ipecho.net/plain"; do
+             IP=$(curl -s --max-time 10 --retry 2 "$service" 2>/dev/null | tr -d '\n')
+             if [ -n "$IP" ] && echo "$IP" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$'; then
+               echo "Got IP from $service: $IP"
+               break
+             fi
+           done
+           
+           # Fallback if all services fail
+           if [ -z "$IP" ]; then
+             IP="unknown"
+             echo "Warning: Could not determine IP address"
+           fi
+           
+           echo "ip=$IP" >> $GITHUB_OUTPUT
+           
+           # WARP status check with timeout
+           TRACE=$(curl -s --max-time 10 https://www.cloudflare.com/cdn-cgi/trace 2>/dev/null || echo "")
            if echo "$TRACE" | grep -q "warp=on"; then
              echo "warp_status=✅ Active" >> $GITHUB_OUTPUT
            else
