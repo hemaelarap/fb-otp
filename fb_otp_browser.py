@@ -701,7 +701,7 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
                 self.driver.execute_script("arguments[0].click();", btn)
                 log("Search button clicked (JS)!", "OK")
             
-            time.sleep(3) # Wait for search
+            time.sleep(2) # Wait for search (Optimized)
             self._save_screenshot(step_name)
             return True
         except Exception as e:
@@ -779,7 +779,7 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
                 
             log(f"✅ Found SMS Option: {sms_label.text}")
             sms_label.click()
-            time.sleep(1)
+            time.sleep(0.5)
             
             # Click Continue
             # Enhanced selectors for Continue button
@@ -827,7 +827,7 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
                 log("❌ Continue button not found", "ERROR")
                 return False, "CONTINUE_BTN_MISSING"
 
-            time.sleep(3)
+            time.sleep(2)
             self._save_screenshot(step_name + "_success")
             return True, "OK"
 
