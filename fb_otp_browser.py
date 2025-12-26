@@ -802,33 +802,29 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
                 return False, "SMS_NOT_FOUND"
                 
             log(f"✅ Found SMS Option: {sms_label.text}")
-            sms_label.click()
+            # Use JS click to avoid interception by spans/overlays
+            self.driver.execute_script("arguments[0].click();", sms_label)
             time.sleep(0.5)
             
-            # Click Continue using JS (TESTED & WORKING)
+            # Click Continue using JS (TESTED & WORKING in browser)
             js_click_continue = """
             (function() {
-                // Method 1: button[name='reset_action'] (most reliable)
+                // Method 1: Click span with "Continue" text directly (MOST RELIABLE - TESTED)
+                let spans = [...document.querySelectorAll('span')];
+                let target = spans.find(s => s.innerText === 'Continue');
+                if (target) { target.click(); return 'clicked_span_continue'; }
+                
+                // Method 2: Arabic text
+                target = spans.find(s => s.innerText === 'متابعة');
+                if (target) { target.click(); return 'clicked_span_arabic'; }
+                
+                // Method 3: button[name='reset_action'] (fallback)
                 let btn = document.querySelector('button[name="reset_action"]');
                 if (btn) { btn.click(); return 'clicked_reset_action'; }
                 
-                // Method 2: button.selected
-                btn = document.querySelector('button.selected');
-                if (btn) { btn.click(); return 'clicked_selected'; }
-                
-                // Method 3: button type=submit
+                // Method 4: button type=submit
                 btn = document.querySelector('button[type="submit"]');
                 if (btn) { btn.click(); return 'clicked_submit'; }
-                
-                // Method 4: span text search
-                let spans = [...document.querySelectorAll('span')];
-                let target = spans.find(s => s.innerText === 'Continue' || s.innerText === 'متابعة');
-                if (target) { target.click(); return 'clicked_span'; }
-                
-                // Method 5: button text search
-                let buttons = [...document.querySelectorAll('button')];
-                target = buttons.find(b => b.innerText.includes('Continue') || b.innerText.includes('متابعة'));
-                if (target) { target.click(); return 'clicked_button_text'; }
                 
                 return 'not_found';
             })();
