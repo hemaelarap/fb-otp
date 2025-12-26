@@ -824,54 +824,76 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
 
             # Find SMS label
             # Strategy: Find all labels, check text for "SMS" and last 2 digits
-            last_2 = number[-2:]
-            labels = self.driver.find_elements(By.TAG_NAME, "label")
-            sms_label = None
-            
-            for label in labels:
-                text = label.text.lower()
-                # Check for "sms" OR "رسالة" AND digits match
-                if ("sms" in text or "رسالة" in text) and (last_2 in text):
-                    sms_label = label
-                    break
-            
-            # Fallback: Just look for SMS if digits fail (maybe hidden)
-            if not sms_label:
-                 for label in labels:
-                    if "sms" in label.text.lower() or "رسالة" in label.text:
+            # PRIORITY 1: Check for "We'll send you a code" page (Direct Confirmation)
+            # If we see this, the option is already selected, just click Continue
+            if "send you a code" in page_source or "we'll send" in page_source:
+                 log("Detected SMS confirmation page - looking for Continue button...", "INFO")
+                 # We can piggyback on the continue click logic at the end, or do it here.
+                 # Let's set a flag to skip finding the label
+                 found_sms_option = True
+                 log("SMS Confirmation Page detected - proceeding to Continue click", "OK")
+            else:
+                 found_sms_option = False
+
+            if not found_sms_option:
+                # PRIORITY 2: Exact ID Selector (Matched from Mobile Script)
+                try:
+                    sms_radios = self.driver.find_elements(By.CSS_SELECTOR, "input[type='radio'][id*='send_sms']")
+                    if sms_radios:
+                        # Click the label associated with it if possible, or the radio itself
+                        try:
+                            parent = sms_radios[0].find_element(By.XPATH, "./..")
+                            parent.click()
+                        except:
+                            self.driver.execute_script("arguments[0].click();", sms_radios[0])
+                            
+                        log("Selected SMS radio button (ID Match)!", "OK")
+                        found_sms_option = True
+                except Exception as e:
+                    log(f"ID Match failed: {e}", "WARN")
+
+            if not found_sms_option:
+                # PRIORITY 3: Find SMS label by Text (Original Logic)
+                last_2 = number[-2:]
+                labels = self.driver.find_elements(By.TAG_NAME, "label")
+                sms_label = None
+                
+                for label in labels:
+                    text = label.text.lower()
+                    if ("sms" in text or "رسالة" in text) and (last_2 in text):
                         sms_label = label
                         break
-            
-            if not sms_label:
+                
+                # Fallback: Just look for SMS if digits fail
+                if not sms_label:
+                     for label in labels:
+                        if "sms" in label.text.lower() or "رسالة" in label.text:
+                            sms_label = label
+                            break
+                
+                if sms_label:
+                    log(f"✅ Found SMS Option: {sms_label.text}")
+                    self.driver.execute_script("arguments[0].click();", sms_label)
+                    found_sms_option = True
+
+            if not found_sms_option:
                 log("❌ SMS Option NOT FOUND", "WARN")
                 return False, "SMS_NOT_FOUND"
                 
-            log(f"✅ Found SMS Option: {sms_label.text}")
-            # Use JS click to avoid interception by spans/overlays
-            self.driver.execute_script("arguments[0].click();", sms_label)
             time.sleep(0.5)
             
             # Click Continue using JS (TESTED & VERIFIED WINNING CODE)
             js_click_continue = """
             (function() {
-                // Method 1: Verified Winning Code (Target by name or class)
+                // Method 1: Verified Winning Code (Target by name, class, or text)
                 let btn = document.querySelector('button[name="reset_action"]') || 
-                          document.querySelector('button._42ft._4jy0._9nq0');
-                if (btn) { btn.click(); return 'clicked_reset_action_or_class'; }
+                          document.querySelector('button._42ft._4jy0._9nq0') ||
+                          document.evaluate("//button[contains(., 'Continue')]", document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue ||
+                          document.evaluate("//button[contains(., 'متابعة')]", document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
 
-                // Method 2: Try by searching text in all buttons (English/Arabic)
-                let buttons = Array.from(document.querySelectorAll('button'));
-                let target = buttons.find(el => {
-                    let text = el.innerText.trim();
-                    return text === 'Continue' || text === 'متابعة';
-                });
-                if (target) { target.click(); return 'clicked_button_text'; }
+                if (btn) { btn.click(); return 'clicked_btn_selector'; }
                 
-                // Method 3: XPath fallback
-                let xpathBtn = document.evaluate("//button[contains(., 'Continue')] | //button[contains(., 'متابعة')]", document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
-                if (xpathBtn) { xpathBtn.click(); return 'clicked_xpath'; }
-                
-                // Method 4: Fallback to any submit button
+                // Method 2: Fallback to any submit button
                 btn = document.querySelector('button[type="submit"]');
                 if (btn) { btn.click(); return 'clicked_submit'; }
                 
@@ -884,8 +906,20 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
             if result and result != 'not_found':
                 log(f"Continue button clicked ({result})!", "OK")
             else:
-                log("❌ Continue button not found", "ERROR")
-                return False, "CONTINUE_BTN_MISSING"
+                log("❌ Continue button not found (JS logic)", "ERROR")
+                # Attempt standard click fallback
+                try:
+                    c_btns = self.driver.find_elements(By.TAG_NAME, "button")
+                    for b in c_btns:
+                        if "continue" in b.text.lower() or "متابعة" in b.text:
+                             b.click()
+                             log("Clicked Continue (Standard Fallback)", "OK")
+                             result = "clicked_standard"
+                             break
+                except: pass
+                
+                if not result or result == 'not_found':
+                    return False, "CONTINUE_BTN_MISSING"
 
             time.sleep(1.5)
             self._save_screenshot(step_name + "_success")
