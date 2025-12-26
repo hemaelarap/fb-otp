@@ -553,48 +553,50 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
     # ==========================================
 
     def _handle_cookie_consent(self):
-        """Handle cookie consent popup if it appears"""
+        """Handle cookie consent popup if it appears - Uses JS to click inner span"""
         try:
-            # Wait briefly for cookie dialog
-            time.sleep(2)
+            # PRIMARY METHOD: JavaScript click on span (TESTED & WORKING)
+            js_click_cookie = """
+            (function() {
+                // Method 1: Click inner span directly (MOST RELIABLE)
+                let spans = [...document.querySelectorAll('span')];
+                let target = spans.find(s => s.innerText === 'Allow all cookies');
+                if (target) { target.click(); return 'clicked_span_en'; }
+                
+                // Method 2: Arabic text
+                target = spans.find(s => s.innerText.includes('السماح'));
+                if (target) { target.click(); return 'clicked_span_ar'; }
+                
+                // Method 3: Fallback to aria-label div
+                let btn = document.querySelector('div[aria-label="Allow all cookies"]');
+                if (btn) { 
+                    let innerSpan = btn.querySelector('span');
+                    if (innerSpan) { innerSpan.click(); return 'clicked_inner_span'; }
+                    btn.click(); 
+                    return 'clicked_div'; 
+                }
+                
+                // Method 4: data-testid
+                btn = document.querySelector('[data-testid="cookie-policy-manage-dialog-accept-button"]');
+                if (btn) { btn.click(); return 'clicked_testid'; }
+                
+                // Method 5: First button in any dialog
+                let dialog = document.querySelector('div[role="dialog"]');
+                if (dialog) {
+                    let firstBtn = dialog.querySelector('button');
+                    if (firstBtn) { firstBtn.click(); return 'clicked_dialog_btn'; }
+                }
+                
+                return 'not_found';
+            })();
+            """
             
-            # Try to find and click "Allow all cookies" button
-            # We use contains(., 'text') to match text inside nested spans/divs
-            cookie_selectors = [
-                # English variations
-                (By.XPATH, "//button[contains(., 'Allow all cookies')]"),
-                (By.XPATH, "//span[contains(., 'Allow all cookies')]"),
-                (By.XPATH, "//div[contains(@aria-label, 'Allow all cookies')]"),
-                (By.XPATH, "//button[contains(., 'Allow All')]"),
-                (By.XPATH, "//button[contains(., 'Accept All')]"),
-                (By.XPATH, "//button[contains(., 'Accept all')]"),
-                (By.XPATH, "//button[contains(., 'Allow essential')]"),
-                # Look for blue button (usually the accept button)
-                (By.XPATH, "//div[@role='dialog']//button[contains(@class, 'Selected')]"),
-                (By.XPATH, "//div[@role='dialog']//div[@role='button' and contains(@class, 'primary')]"),
-                # Arabic
-                (By.XPATH, "//button[contains(., 'السماح')]"),
-                (By.XPATH, "//span[contains(., 'السماح')]"),
-                (By.XPATH, "//button[contains(., 'قبول')]"),
-                # Data attributes
-                (By.CSS_SELECTOR, "button[data-cookiebanner='accept_button']"),
-                (By.CSS_SELECTOR, "button[data-testid='cookie-policy-manage-dialog-accept-button']"),
-                # Generic - look for any button with "cookie" nearby
-                (By.XPATH, "//div[contains(@class, 'cookie')]//button"),
-            ]
+            result = self.driver.execute_script(js_click_cookie)
             
-            for by, selector in cookie_selectors:
-                try:
-                    # Use a short explicit wait for the element
-                    btn = WebDriverWait(self.driver, 1).until(EC.element_to_be_clickable((by, selector)))
-                    if btn:
-                        log(f"Found cookie button: {selector}", "INFO")
-                        btn.click()
-                        log("Cookie consent accepted!", "OK")
-                        time.sleep(2) # Wait for dialog to disappear
-                        return True
-                except:
-                    continue
+            if result and result != 'not_found':
+                log(f"Cookie consent accepted ({result})!", "OK")
+                time.sleep(1)
+                return True
             
             log("No cookie consent dialog found", "INFO")
             return False
@@ -701,7 +703,7 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
                 self.driver.execute_script("arguments[0].click();", btn)
                 log("Search button clicked (JS)!", "OK")
             
-            time.sleep(2) # Wait for search (Optimized)
+            time.sleep(1.5) # Wait for search (Optimized)
             self._save_screenshot(step_name)
             return True
         except Exception as e:
@@ -827,7 +829,7 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
                 log("❌ Continue button not found", "ERROR")
                 return False, "CONTINUE_BTN_MISSING"
 
-            time.sleep(2)
+            time.sleep(1.5)
             self._save_screenshot(step_name + "_success")
             return True, "OK"
 
