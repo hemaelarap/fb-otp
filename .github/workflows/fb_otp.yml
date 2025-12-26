@@ -88,21 +88,10 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y openvpn dialog python3-pip expect wget
-          # Chrome dependencies for headless mode (Ubuntu 24.04 compatible)
-          sudo apt-get install -y xvfb libnss3 libxss1 libasound2t64 libatk-bridge2.0-0 libgtk-3-0 || true
+          sudo apt-get install -y wireguard resolvconf unzip
           pip install selenium webdriver-manager requests
-          # Set Chrome path for Selenium (setup-chrome installs to specific path)
-          # Set Chrome path for Selenium (setup-chrome installs to specific path)
-          CHROME_PATH=$(find /opt/hostedtoolcache -name chrome -type f -executable | head -1)
-          if [ -z "$CHROME_PATH" ]; then
-             CHROME_PATH=$(which google-chrome || echo "")
-          fi
-          echo "Found Chrome at: $CHROME_PATH"
-          echo "CHROME_BIN=$CHROME_PATH" >> $GITHUB_ENV
-          
-          # Verify Chrome installed
-          "$CHROME_PATH" --version || echo "Chrome version check failed"
+          # Verify Chrome is available (setup-chrome adds it to PATH)
+          google-chrome --version || echo "Chrome version check failed"
 
       - name: Connect to VPN (ProtonVPN WireGuard)
         run: |
