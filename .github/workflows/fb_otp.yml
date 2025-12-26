@@ -260,3 +260,10 @@ jobs:
           except Exception as e:
               print(f'Failed to send completion message: {e}')
           "
+
+      - name: Disconnect VPN and Cleanup
+        if: always()
+        run: |
+          echo "🔌 Disconnecting VPN..."
+          sudo wg-quick down wg0 || true
+          echo "✅ Cleanup complete"
