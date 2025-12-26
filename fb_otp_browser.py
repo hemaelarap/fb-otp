@@ -614,18 +614,31 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
         max_retries = 3
         for attempt in range(max_retries):
             try:
+                # Increase page load timeout for slow VPN connections
+                self.driver.set_page_load_timeout(45)
+                
                 self.driver.get('https://www.facebook.com/login/identify/?ctx=recover&from_login_screen=0')
                 
-                # Wait for page to actually load (check for input field)
+                # Wait for page to actually load (check for input field OR body content)
+                page_loaded = False
                 try:
-                    WebDriverWait(self.driver, 10).until(
+                    WebDriverWait(self.driver, 15).until(
                         EC.presence_of_element_located((By.ID, "identify_email"))
                     )
+                    page_loaded = True
                     log(f"Page loaded successfully (attempt {attempt + 1})", "OK")
                 except:
-                    # Page might still be loading, check title
-                    if "facebook" not in self.driver.title.lower():
-                        raise Exception("Page did not load properly")
+                    # Check if page has any content
+                    try:
+                        body = self.driver.find_element(By.TAG_NAME, "body")
+                        if body and len(body.text) > 50:
+                            page_loaded = True
+                            log(f"Page loaded with content (attempt {attempt + 1})", "OK")
+                    except:
+                        pass
+                
+                if not page_loaded:
+                    raise Exception("Page did not load properly - no content")
                 
                 self._save_screenshot(step_name)
                 self.random_sleep(2, 4)
@@ -639,8 +652,9 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
             except Exception as e:
                 log(f"Attempt {attempt + 1}/{max_retries} failed: {e}", "WARN")
                 if attempt < max_retries - 1:
-                    log(f"Retrying in 3 seconds...", "INFO")
-                    time.sleep(3)
+                    wait_time = 5 * (attempt + 1)  # Exponential backoff: 5s, 10s
+                    log(f"Retrying in {wait_time} seconds...", "INFO")
+                    time.sleep(wait_time)
                     try:
                         self.driver.refresh()
                     except:
@@ -652,45 +666,76 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
         return False
 
     def step2_enter_phone(self, number):
-        """Step 2: Enter number (Desktop Flow)"""
+        """Step 2: Enter number (Desktop Flow) - With Retry"""
         step_name = "2_enter_phone"
         log(f"Step 2: Entering phone [{number}]...")
         # Check cookies again (sometimes appears late)
         self._handle_cookie_consent()
-        try:
-            # Try multiple selectors for input field
-            input_selectors = [
-                (By.ID, "identify_email"),
-                (By.NAME, "email"),
-                (By.CSS_SELECTOR, "input[name='email']"),
-                (By.CSS_SELECTOR, "input[type='text']"),
-                (By.XPATH, "//input[@placeholder]"),
-            ]
-            
-            inp = None
-            for by, selector in input_selectors:
-                try:
-                    inp = WebDriverWait(self.driver, 5).until(
-                        EC.presence_of_element_located((by, selector))
-                    )
-                    if inp and inp.is_displayed():
-                        log(f"Found input field: {selector}", "INFO")
-                        break
-                except:
+        
+        max_retries = 2
+        for attempt in range(max_retries):
+            try:
+                # Try multiple selectors for input field with longer timeout
+                input_selectors = [
+                    (By.ID, "identify_email"),
+                    (By.NAME, "email"),
+                    (By.CSS_SELECTOR, "input[name='email']"),
+                    (By.CSS_SELECTOR, "input[type='text']"),
+                    (By.XPATH, "//input[@placeholder]"),
+                ]
+                
+                inp = None
+                for by, selector in input_selectors:
+                    try:
+                        inp = WebDriverWait(self.driver, 10).until(
+                            EC.presence_of_element_located((by, selector))
+                        )
+                        if inp and inp.is_displayed():
+                            log(f"Found input field: {selector}", "INFO")
+                            break
+                    except:
+                        continue
+                
+                # JavaScript fallback if Selenium didn't find it
+                if not inp:
+                    try:
+                        js_result = self.driver.execute_script("""
+                            var inp = document.getElementById('identify_email') || 
+                                      document.querySelector('input[name="email"]') ||
+                                      document.querySelector('input[type="text"]');
+                            if (inp) { return 'found'; }
+                            return 'not_found';
+                        """)
+                        if js_result == 'found':
+                            inp = self.driver.find_element(By.CSS_SELECTOR, "input")
+                            log("Found input field via JavaScript", "INFO")
+                    except:
+                        pass
+                
+                if not inp:
+                    if attempt < max_retries - 1:
+                        log(f"Input not found (attempt {attempt + 1}), refreshing...", "WARN")
+                        self.driver.refresh()
+                        time.sleep(3)
+                        continue
+                    log("Could not find input field", "ERROR")
+                    self._handle_failure(step_name)
+                    return False
+                
+                inp.clear()
+                inp.send_keys(number)
+                self._save_screenshot(step_name)
+                return True
+                
+            except Exception as e:
+                if attempt < max_retries - 1:
+                    log(f"Step 2 attempt {attempt + 1} failed: {e}", "WARN")
+                    time.sleep(2)
                     continue
-            
-            if not inp:
-                log("Could not find input field", "ERROR")
                 self._handle_failure(step_name)
                 return False
-            
-            inp.clear()
-            inp.send_keys(number)
-            self._save_screenshot(step_name)
-            return True
-        except Exception as e:
-            self._handle_failure(step_name)
-            return False
+        
+        return False
 
     def step3_click_search(self, phone=""):
         """Step 3: Click Search"""
