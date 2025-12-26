@@ -835,67 +835,23 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
             else:
                  found_sms_option = False
 
-            if not found_sms_option:
-                # PRIORITY 2: Exact ID Selector (Matched from Mobile Script)
-                try:
-                    sms_radios = self.driver.find_elements(By.CSS_SELECTOR, "input[type='radio'][id*='send_sms']")
-                    if sms_radios:
-                        # Click the label associated with it if possible, or the radio itself
-                        try:
-                            parent = sms_radios[0].find_element(By.XPATH, "./..")
-                            parent.click()
-                        except:
-                            self.driver.execute_script("arguments[0].click();", sms_radios[0])
-                            
-                        log("Selected SMS radio button (ID Match)!", "OK")
-                        found_sms_option = True
-                except Exception as e:
-                    log(f"ID Match failed: {e}", "WARN")
-
-            if not found_sms_option:
-                # PRIORITY 2.5: SCAN ALL RADIOS (Generic fallback)
-                try:
-                    all_radios = self.driver.find_elements(By.CSS_SELECTOR, "input[type='radio']")
-                    for r in all_radios:
-                        # Get text of parent or body text near it?
-                        # Best is to check parent text
-                        try:
-                            parent_text = r.find_element(By.XPATH, "./..").text.lower()
-                            if "sms" in parent_text or "رسالة" in parent_text or number[-4:] in parent_text: # match last 4 digits
-                                log(f"Found SMS radio by Context: {parent_text[:30]}...", "OK")
-                                self.driver.execute_script("arguments[0].click();", r)
-                                found_sms_option = True
-                                break
-                        except: pass
-                except: pass
-
-            if not found_sms_option:
-                # PRIORITY 3: Find SMS label by Text (Original Logic)
-                last_2 = number[-2:]
+            # USER REQUEST: Assume SMS option is selected by default and just click Continue.
+            # We will try a quick "best effort" check but won't fail if we don't find it.
+            
+            log("User Directive: Assuming SMS option is pre-selected. Skipping strict search.", "INFO")
+             
+            # Optional: Quick check just to log what we see (non-blocking)
+            try:
                 labels = self.driver.find_elements(By.TAG_NAME, "label")
-                sms_label = None
-                
-                for label in labels:
-                    text = label.text.lower()
-                    if ("sms" in text or "رسالة" in text) and (last_2 in text):
-                        sms_label = label
-                        break
-                
-                # Fallback: Just look for SMS if digits fail
-                if not sms_label:
-                     for label in labels:
-                        if "sms" in label.text.lower() or "رسالة" in label.text:
-                            sms_label = label
-                            break
-                
-                if sms_label:
-                    log(f"✅ Found SMS Option: {sms_label.text}")
-                    self.driver.execute_script("arguments[0].click();", sms_label)
-                    found_sms_option = True
+                for l in labels:
+                    if "sms" in l.text.lower() or number[-4:] in l.text:
+                         log(f"Verified SMS text present: {l.text[:30]}", "INFO")
+                         break
+            except: pass
 
-            if not found_sms_option:
-                log("❌ SMS Option NOT FOUND", "WARN")
-                return False, "SMS_NOT_FOUND"
+            found_sms_option = True # FORCE SUCCESS for this part
+            
+            # (Old search logic removed/bypassed to satisfy "Cancel this choice" request)
                 
             time.sleep(0.5)
             
