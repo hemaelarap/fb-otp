@@ -606,22 +606,50 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
             return False
 
     def step1_open_recovery_page(self, phone=""):
-        """Step 1: Open Facebook Identify Page (Desktop)"""
+        """Step 1: Open Facebook Identify Page (Desktop) - With Retry"""
         step_name = "1_open_identify"
         log(f"Step 1: Opening Facebook Identify [{phone}]...")
-        try:
-            self.driver.get('https://www.facebook.com/login/identify/?ctx=recover&from_login_screen=0')
-            self._save_screenshot(step_name)
-            self.random_sleep(2, 4)
-            
-            # Check for cookie consent dialog
-            self._handle_cookie_consent()
-            
-            self.simulate_human_behavior()
-            return True
-        except Exception as e:
-            self._handle_failure(step_name)
-            return False
+        
+        # Retry logic for network issues
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                self.driver.get('https://www.facebook.com/login/identify/?ctx=recover&from_login_screen=0')
+                
+                # Wait for page to actually load (check for input field)
+                try:
+                    WebDriverWait(self.driver, 10).until(
+                        EC.presence_of_element_located((By.ID, "identify_email"))
+                    )
+                    log(f"Page loaded successfully (attempt {attempt + 1})", "OK")
+                except:
+                    # Page might still be loading, check title
+                    if "facebook" not in self.driver.title.lower():
+                        raise Exception("Page did not load properly")
+                
+                self._save_screenshot(step_name)
+                self.random_sleep(2, 4)
+                
+                # Check for cookie consent dialog
+                self._handle_cookie_consent()
+                
+                self.simulate_human_behavior()
+                return True
+                
+            except Exception as e:
+                log(f"Attempt {attempt + 1}/{max_retries} failed: {e}", "WARN")
+                if attempt < max_retries - 1:
+                    log(f"Retrying in 3 seconds...", "INFO")
+                    time.sleep(3)
+                    try:
+                        self.driver.refresh()
+                    except:
+                        pass
+                else:
+                    self._handle_failure(step_name)
+                    return False
+        
+        return False
 
     def step2_enter_phone(self, number):
         """Step 2: Enter number (Desktop Flow)"""
@@ -880,37 +908,77 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
             
             time.sleep(0.5) # Wait for selection to register
             
-            # SUCCESS: We have an SMS option selected (or verified)
-            
             # ---------------------------------------------------------
-            # SIMPLE CONTINUE BUTTON CLICK - ONLY VERIFIED METHOD
-            # Using ONLY name="reset_action" which was tested and confirmed working
+            # CONTINUE BUTTON CLICK - With Fallback Methods
+            # Primary: name="reset_action", Fallback: type="submit" or text match
             # ---------------------------------------------------------
-            log("Clicking 'Continue' button (name=reset_action)...", "INFO")
+            log("Clicking 'Continue' button...", "INFO")
             
             continue_clicked = False
             
-            # ONLY METHOD: Find button by name='reset_action' - THIS IS THE ONLY WORKING METHOD
+            # Method 1: JavaScript - Try multiple selectors
             try:
-                # First try JavaScript click (more reliable)
                 js_result = self.driver.execute_script("""
+                    // Method A: name=reset_action (PRIMARY)
                     var btn = document.querySelector('button[name="reset_action"]');
-                    if (btn) { btn.click(); return 'clicked'; }
+                    if (btn) { btn.click(); return 'reset_action'; }
+                    
+                    // Method B: type=submit (skip "Not you" buttons)
+                    var btns = document.querySelectorAll('button[type="submit"]');
+                    for (var b of btns) {
+                        var txt = b.innerText.toLowerCase();
+                        if (!txt.includes('not') && !txt.includes('ليس')) {
+                            b.click();
+                            return 'submit_btn';
+                        }
+                    }
+                    
+                    // Method C: Any button with Continue/متابعة text
+                    btns = document.querySelectorAll('button');
+                    for (var b of btns) {
+                        var txt = b.innerText.toLowerCase();
+                        if (txt.includes('continue') || txt.includes('متابعة')) {
+                            if (!txt.includes('not') && !txt.includes('ليس')) {
+                                b.click();
+                                return 'continue_text';
+                            }
+                        }
+                    }
+                    
                     return 'not_found';
                 """)
                 
-                if js_result == 'clicked':
-                    log("Clicked Continue button (JS: name=reset_action)!", "OK")
+                if js_result and js_result != 'not_found':
+                    log(f"Clicked Continue button (JS: {js_result})!", "OK")
                     continue_clicked = True
-                else:
-                    # Fallback to Selenium click
+            except Exception as e:
+                log(f"JS Continue click failed: {e}", "WARN")
+            
+            # Method 2: Selenium fallback
+            if not continue_clicked:
+                try:
+                    # Try name=reset_action
                     btn = self.driver.find_element(By.NAME, "reset_action")
                     if btn.is_displayed():
                         btn.click()
                         log("Clicked Continue button (Selenium: name=reset_action)!", "OK")
                         continue_clicked = True
-            except Exception as e:
-                log(f"Continue button click failed: {e}", "WARN")
+                except:
+                    pass
+            
+            # Method 3: Any submit button
+            if not continue_clicked:
+                try:
+                    btns = self.driver.find_elements(By.CSS_SELECTOR, "button[type='submit']")
+                    for b in btns:
+                        txt = b.text.lower()
+                        if "not" not in txt and "ليس" not in txt:
+                            b.click()
+                            log("Clicked Continue button (Selenium: submit)!", "OK")
+                            continue_clicked = True
+                            break
+                except:
+                    pass
             
             if not continue_clicked:
                 log("❌ Continue button NOT clicked!", "ERROR")
