@@ -60,7 +60,6 @@ except ImportError:
 
 # Undetected Chromedriver removed by user request
 UNDETECTED_AVAILABLE = False
-VIDEO_AVAILABLE = False
 
 
 # Colors
@@ -189,12 +188,13 @@ class FacebookOTPBrowser:
     def __init__(self, headless=False, proxy=None, proxy_manager=None):
         self.driver = None
         self.headless = headless
-        self.wait_time = 15 # Increased default wait
+        self.wait_time = 12 # Optimized for faster VPNs
         self.proxy = proxy
         self.proxy_manager = proxy_manager
         self.snapshot_taken = False
         self.wait = None
         self.current_phone = None
+        self.cookie_handled = False  # Prevent duplicate cookie consent handling
         
     
     def _save_failure_snapshot(self, step_name):
@@ -241,10 +241,6 @@ class FacebookOTPBrowser:
              caption = f"📸 Step: {name} [{self.current_phone}]"
              self.send_telegram_photo(caption, filename)
          except: pass
-    
-    def _take_step_snapshot(self, step_name, phone_info=""):
-        """Alias for _save_screenshot to prevent errors if old calls exist"""
-        self._save_screenshot(step_name)
 
     def _setup_driver(self):
         """Setup Chrome WebDriver with optional proxy support"""
@@ -442,13 +438,28 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
                 log(f"Using proxy: {proxy_host}:{proxy_port}", "INFO")
     
     def _close_driver(self):
-        """Close the browser"""
+        """Close the browser and cleanup temp files"""
         if self.driver:
             try:
                 self.driver.quit()
             except:
                 pass
             self.driver = None
+        # Cleanup screenshot files
+        self._cleanup_screenshots()
+    
+    def _cleanup_screenshots(self):
+        """Delete temporary screenshot files after sending to Telegram"""
+        try:
+            import glob
+            for f in glob.glob("*.png"):
+                if f.startswith(("fail_", "snap_", "1_", "2_", "3_", "4_", "5_", "6_")):
+                    try:
+                        os.remove(f)
+                    except:
+                        pass
+        except:
+            pass
     
     def _wait_for_element(self, by, value, timeout=None):
         """Wait for element to be present"""
@@ -555,6 +566,10 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
 
     def _handle_cookie_consent(self):
         """Handle cookie consent popup if it appears - Uses JS to click inner span"""
+        # Skip if already handled
+        if self.cookie_handled:
+            return True
+        
         try:
             # PRIMARY METHOD: JavaScript click on span (TESTED & WORKING)
             js_click_cookie = """
@@ -596,13 +611,12 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
             
             if result and result != 'not_found':
                 log(f"Cookie consent accepted ({result})!", "OK")
-                time.sleep(1)
+                self.cookie_handled = True  # Mark as handled
+                time.sleep(0.5)  # Reduced from 1s
                 return True
             
-            log("No cookie consent dialog found", "INFO")
             return False
         except Exception as e:
-            log(f"Cookie consent check error: {e}", "WARN")
             return False
 
     def step1_open_recovery_page(self, phone=""):
@@ -615,14 +629,14 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
         for attempt in range(max_retries):
             try:
                 # Increase page load timeout for slow VPN connections
-                self.driver.set_page_load_timeout(45)
+                self.driver.set_page_load_timeout(30)
                 
                 self.driver.get('https://www.facebook.com/login/identify/?ctx=recover&from_login_screen=0')
                 
                 # Wait for page to actually load (check for input field OR body content)
                 page_loaded = False
                 try:
-                    WebDriverWait(self.driver, 15).until(
+                    WebDriverWait(self.driver, 8).until(
                         EC.presence_of_element_located((By.ID, "identify_email"))
                     )
                     page_loaded = True
@@ -640,19 +654,17 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
                 if not page_loaded:
                     raise Exception("Page did not load properly - no content")
                 
-                self._save_screenshot(step_name)
-                self.random_sleep(2, 4)
+                time.sleep(0.5)  # Brief wait before cookie check
                 
                 # Check for cookie consent dialog
                 self._handle_cookie_consent()
                 
-                self.simulate_human_behavior()
                 return True
                 
             except Exception as e:
                 log(f"Attempt {attempt + 1}/{max_retries} failed: {e}", "WARN")
                 if attempt < max_retries - 1:
-                    wait_time = 5 * (attempt + 1)  # Exponential backoff: 5s, 10s
+                    wait_time = 3 * (attempt + 1)  # Exponential backoff: 3s, 6s
                     log(f"Retrying in {wait_time} seconds...", "INFO")
                     time.sleep(wait_time)
                     try:
@@ -687,7 +699,7 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
                 inp = None
                 for by, selector in input_selectors:
                     try:
-                        inp = WebDriverWait(self.driver, 10).until(
+                        inp = WebDriverWait(self.driver, 6).until(
                             EC.presence_of_element_located((by, selector))
                         )
                         if inp and inp.is_displayed():
@@ -716,7 +728,7 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
                     if attempt < max_retries - 1:
                         log(f"Input not found (attempt {attempt + 1}), refreshing...", "WARN")
                         self.driver.refresh()
-                        time.sleep(3)
+                        time.sleep(1.5)
                         continue
                     log("Could not find input field", "ERROR")
                     self._handle_failure(step_name)
@@ -724,13 +736,12 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
                 
                 inp.clear()
                 inp.send_keys(number)
-                self._save_screenshot(step_name)
                 return True
                 
             except Exception as e:
                 if attempt < max_retries - 1:
                     log(f"Step 2 attempt {attempt + 1} failed: {e}", "WARN")
-                    time.sleep(2)
+                    time.sleep(1)
                     continue
                 self._handle_failure(step_name)
                 return False
@@ -779,8 +790,7 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
                 self.driver.execute_script("arguments[0].click();", btn)
                 log("Search button clicked (JS)!", "OK")
             
-            time.sleep(2.5) # Wait for search results to load
-            self._save_screenshot(step_name)
+            time.sleep(0.8) # Wait for search results to load
             return True
         except Exception as e:
             # Final attempt to clear cookie if we couldn't find/click
@@ -830,8 +840,7 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
                 result = self.driver.execute_script(js_select_first)
                 if result == 'selected':
                     log("First account selected!", "OK")
-                    time.sleep(2)
-                    self._save_screenshot("4_Result_MULTIPLE_SELECTED")
+                    time.sleep(1)
                 return "MULTIPLE_ACCOUNTS"
             
             # Case 3: Still on identify page (but with ctx=recover = need to click "Try another way")
@@ -886,8 +895,6 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
             # Check for specific "Page isn't available" error
             self._check_broken_page()
             
-            self._save_screenshot(step_name + "_start")
-            
             # CRITICAL FIX: Check for "Try another way" (Intermediate Screen)
             # If we see this, we must click it to reveal the actual radio options
             try:
@@ -904,7 +911,7 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
                 if try_another and try_another.is_displayed():
                     log(f"Found 'Try another way' button. Clicking to reveal options...", "INFO")
                     self.driver.execute_script("arguments[0].click();", try_another)
-                    time.sleep(2.5) # Wait for options to load
+                    time.sleep(0.8) # Wait for options to load
             except Exception as e:
                 log(f"Check for 'Try another way' failed (non-critical): {e}", "WARN")
 
@@ -1029,7 +1036,7 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
                 log("❌ Continue button NOT clicked!", "ERROR")
                 return False, "CONTINUE_BTN_MISSING"
 
-            time.sleep(2.0) # Wait for processing
+            time.sleep(1.0) # Wait for processing
             self._save_screenshot(step_name + "_success")
             return True, "OK"
 
@@ -1138,7 +1145,7 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
                     try:
                         # Navigate to the recovery initiate page
                         self.driver.get("https://www.facebook.com/recover/initiate/?is_from_lara_screen=1")
-                        time.sleep(3)
+                        time.sleep(1.5)
                         
                         # RE-ENTER THE PHONE NUMBER on this page
                         try:
@@ -1156,7 +1163,7 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
                                 btn = self.driver.find_element(By.CSS_SELECTOR, "button[type='submit']")
                                 btn.click()
                             log("Clicked search on recovery page", "OK")
-                            time.sleep(3)
+                            time.sleep(1.5)
                         except Exception as e:
                             log(f"Could not re-enter phone: {e}", "WARN")
                         
@@ -1196,7 +1203,7 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
                             target_btn = valid_buttons[accounts_processed]
                             log(f"Selecting account #{accounts_processed + 1}...", "INFO")
                             target_btn.click()
-                            time.sleep(5)
+                            time.sleep(3)
                             
                             # Force navigate to recovery initiate just in case
                             self.driver.get("https://www.facebook.com/recover/initiate/?is_from_lara_screen=1")
