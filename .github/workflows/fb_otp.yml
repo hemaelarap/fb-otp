@@ -139,6 +139,19 @@ jobs:
           # Wait and verify
           sleep 5
           
+          # Fix DNS (WireGuard often corrupts it)
+          echo "nameserver 1.1.1.1" | sudo tee /etc/resolv.conf
+          echo "nameserver 8.8.8.8" | sudo tee -a /etc/resolv.conf
+          
+          # TEST CONNECTIVITY
+          echo "📡 Testing Connectivity..."
+          if ! ping -c 3 google.com; then
+            echo "❌ No Internet Access! Retrying with different DNS..."
+            echo "nameserver 8.8.4.4" | sudo tee /etc/resolv.conf
+            sleep 2
+            ping -c 3 google.com || exit 1
+          fi
+          
           # Check connection
           if ip addr show wg0 > /dev/null 2>&1; then
             NEW_IP=$(curl -s --max-time 10 https://api.ipify.org || echo "unknown")
