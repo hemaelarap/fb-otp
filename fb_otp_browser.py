@@ -803,6 +803,7 @@ chrome.webRequest.onAuthRequired.addListener(callbackFn, {{urls: ["<all_urls>"]}
         """Step 4: Analyze Search Result"""
         step_name = "4_check_result"
         log(f"Step 4: Checking account result [{phone}]...")
+        time.sleep(1)  # Wait 1 second before checking result
         try:
             url = self.driver.current_url
             page_text = self.driver.find_element(By.TAG_NAME, "body").text.lower()
